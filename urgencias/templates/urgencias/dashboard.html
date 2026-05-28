@@ -1,0 +1,440 @@
+{% extends 'urgencias/base.html' %}
+
+{% block title %}Overview y Monitor de Camas{% endblock %}
+
+{% block section_title %}Overview y Monitor de Camas{% endblock %}
+
+{% block content %}
+<!-- Estadísticas Clínicas Rápidas -->
+<div class="stats-grid">
+    <div class="stat-card total">
+        <span class="stat-label">Admisiones Activas</span>
+        <span class="stat-value">{{ stats.admisiones_activas }}</span>
+    </div>
+    <div class="stat-card disponible">
+        <span class="stat-label">Camas Libres</span>
+        <span class="stat-value">{{ stats.camas_libres }}</span>
+    </div>
+    <div class="stat-card ocupado">
+        <span class="stat-label">Camas Ocupadas</span>
+        <span class="stat-value">{{ stats.camas_ocupadas }}</span>
+    </div>
+    <div class="stat-card limpieza">
+        <span class="stat-label">En Desinfección</span>
+        <span class="stat-value">{{ stats.recursos_limpieza }}</span>
+    </div>
+    <div class="stat-card total">
+        <span class="stat-label">Boxes de Triage Libres</span>
+        <span class="stat-value">{{ stats.boxes_libres }}</span>
+    </div>
+</div>
+
+<!-- Toolbar de Filtrado Avanzado -->
+<div class="filter-toolbar">
+    <div class="filter-search-group">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="resourceSearch" class="form-control filter-search-input" placeholder="Buscar por código o descripción..." oninput="filterResourcesLive()">
+    </div>
+    
+    <div class="filter-select-group">
+        <div class="resources-tabs">
+            <button class="tab-btn active" onclick="changeTypeFilter('TODOS')">Todos</button>
+            <button class="tab-btn" onclick="changeTypeFilter('CAMA')">Camas</button>
+            <button class="tab-btn" onclick="changeTypeFilter('BOX')">Boxes</button>
+            <button class="tab-btn" onclick="changeTypeFilter('QUIROFANO')">Quirófanos</button>
+        </div>
+        
+        <select id="stateFilter" class="form-control filter-select" onchange="filterResourcesLive()">
+            <option value="ALL">Todos los estados</option>
+            <option value="DISPONIBLE">Disponibles</option>
+            <option value="OCUPADO">Ocupados</option>
+            <option value="PRE_ALTA">Pre-Alta</option>
+            <option value="LIMPIEZA">En Limpieza</option>
+        </select>
+    </div>
+</div>
+
+<!-- SECTOR: CAMAS DE HOSPITALIZACIÓN -->
+<div class="accordion-section" id="sec-camas">
+    <div class="accordion-header" onclick="toggleAccordion('sec-camas')">
+        <div class="accordion-title">
+            <span class="accordion-icon">▼</span>
+            <h3>Camas de Hospitalización</h3>
+            <span class="count-badge disponible">{{ stats.camas_libres }} libres</span>
+            <span class="count-badge ocupado">{{ stats.camas_ocupadas }} ocupadas</span>
+        </div>
+    </div>
+    <div class="accordion-content">
+        <!-- Recursos Libres -->
+        <div style="margin-bottom: 20px;">
+            <h4 style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Camas Libres (Disponibles para Asignar)</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                {% for recurso in recursos %}
+                    {% if recurso.tipo == 'CAMA' and recurso.estado == 'DISPONIBLE' %}
+                        <div class="free-resource-pill" onclick="openAssignModal('{{ recurso.id }}', '{{ recurso.codigo }}')" title="Asignar {{ recurso.codigo }}">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M2 4v16M22 8v12M2 8h20M2 14h20M6 6h4v3H6z"/>
+                            </svg>
+                            {{ recurso.codigo }}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Recursos Ocupados -->
+        <h4 style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Camas en Uso / Limpieza</h4>
+        <div class="resources-list-view">
+            {% for recurso in recursos %}
+                {% if recurso.tipo == 'CAMA' and recurso.estado != 'DISPONIBLE' %}
+                    <div class="resource-list-item state-{{ recurso.estado|lower }}" data-tipo="{{ recurso.tipo }}">
+                        <div class="resource-header">
+                            <span class="resource-code">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M2 4v16M22 8v12M2 8h20M2 14h20M6 6h4v3H6z"/>
+                                </svg>
+                                {{ recurso.codigo }}
+                            </span>
+                            <span class="resource-badge">{{ recurso.get_estado_display }}</span>
+                        </div>
+                        <div class="resource-details">
+                            <div style="font-weight: 500; font-size: 0.75rem;">{{ recurso.descripcion }}</div>
+                            {% if recurso.estado == 'OCUPADO' or recurso.estado == 'PRE_ALTA' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                    <div class="resource-patient">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                                        </svg>
+                                        <span>{{ adm.paciente.nombre }} {{ adm.paciente.apellido|slice:":12" }}...</span>
+                                        {% if adm.fecha_admision_cama %}
+                                            <div style="font-size: 0.65rem; color: var(--text-secondary); margin-top: 2px;">
+                                                ⏱️ Ingresado hace {{ adm.fecha_admision_cama|timesince }}
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        <div class="resource-actions">
+                            {% if recurso.estado == 'OCUPADO' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                                            <button class="btn btn-primary btn-sm btn-full" onclick="ordenarPreAlta('{{ adm.id }}')">Emitir Pre-Alta</button>
+                                            <button class="btn btn-danger btn-sm btn-full" onclick="liberarRecurso('{{ adm.id }}')">Alta Directa</button>
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% elif recurso.estado == 'PRE_ALTA' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                        <button class="btn btn-success btn-sm btn-full" onclick="confirmarSalidaFisica('{{ adm.id }}')">Confirmar Salida</button>
+                                    {% endif %}
+                                {% endfor %}
+                            {% elif recurso.estado == 'LIMPIEZA' %}
+                                <button class="btn btn-secondary btn-sm btn-full" onclick="registrarLimpiezaCompletada('{{ recurso.id }}')" style="border-color: var(--color-limpieza); color: var(--color-limpieza); background: rgba(124, 58, 237, 0.05); font-weight: bold;">✓ Completar Limpieza</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- SECTOR: BOXES DE EMERGENCIA Y TRIAJE -->
+<div class="accordion-section" id="sec-boxes">
+    <div class="accordion-header" onclick="toggleAccordion('sec-boxes')">
+        <div class="accordion-title">
+            <span class="accordion-icon">▼</span>
+            <h3>Boxes de Emergencia y Triaje</h3>
+            <span class="count-badge disponible">{{ stats.boxes_libres }} libres</span>
+            <span class="count-badge ocupado">{{ stats.boxes_ocupados }} ocupados</span>
+        </div>
+    </div>
+    <div class="accordion-content">
+        <!-- Recursos Libres -->
+        <div style="margin-bottom: 20px;">
+            <h4 style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Boxes Libres (Disponibles para Asignar)</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                {% for recurso in recursos %}
+                    {% if recurso.tipo == 'BOX' and recurso.estado == 'DISPONIBLE' %}
+                        <div class="free-resource-pill" onclick="openAssignModal('{{ recurso.id }}', '{{ recurso.codigo }}')" title="Asignar {{ recurso.codigo }}">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 16V8a2 2 0 0 0-2-2h-5c-1.1 0-2 .9-2 2v8M4 16v4h16v-4"/>
+                            </svg>
+                            {{ recurso.codigo }}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Recursos Ocupados -->
+        <h4 style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Boxes en Uso / Limpieza</h4>
+        <div class="resources-list-view">
+            {% for recurso in recursos %}
+                {% if recurso.tipo == 'BOX' and recurso.estado != 'DISPONIBLE' %}
+                    <div class="resource-list-item state-{{ recurso.estado|lower }}" data-tipo="{{ recurso.tipo }}">
+                        <div class="resource-header">
+                            <span class="resource-code">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 16V8a2 2 0 0 0-2-2h-5c-1.1 0-2 .9-2 2v8M4 16v4h16v-4"/>
+                                </svg>
+                                {{ recurso.codigo }}
+                            </span>
+                            <span class="resource-badge">{{ recurso.get_estado_display }}</span>
+                        </div>
+                        <div class="resource-details">
+                            <div style="font-weight: 500; font-size: 0.75rem;">{{ recurso.descripcion }}</div>
+                            {% if recurso.estado == 'OCUPADO' or recurso.estado == 'PRE_ALTA' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                    <div class="resource-patient">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                                        </svg>
+                                        <span>{{ adm.paciente.nombre }} {{ adm.paciente.apellido|slice:":12" }}...</span>
+                                        {% if adm.fecha_admision_cama %}
+                                            <div style="font-size: 0.65rem; color: var(--text-secondary); margin-top: 2px;">
+                                                ⏱️ Ingresado hace {{ adm.fecha_admision_cama|timesince }}
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        <div class="resource-actions">
+                            {% if recurso.estado == 'OCUPADO' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                                            <button class="btn btn-primary btn-sm btn-full" onclick="ordenarPreAlta('{{ adm.id }}')">Emitir Pre-Alta</button>
+                                            <button class="btn btn-danger btn-sm btn-full" onclick="liberarRecurso('{{ adm.id }}')">Alta Directa</button>
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% elif recurso.estado == 'PRE_ALTA' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                        <button class="btn btn-success btn-sm btn-full" onclick="confirmarSalidaFisica('{{ adm.id }}')">Confirmar Salida</button>
+                                    {% endif %}
+                                {% endfor %}
+                            {% elif recurso.estado == 'LIMPIEZA' %}
+                                <button class="btn btn-secondary btn-sm btn-full" onclick="registrarLimpiezaCompletada('{{ recurso.id }}')" style="border-color: var(--color-limpieza); color: var(--color-limpieza); background: rgba(124, 58, 237, 0.05); font-weight: bold;">✓ Completar Limpieza</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- SECTOR: QUIRÓFANOS Y SALAS DE CIRUGÍA -->
+<div class="accordion-section" id="sec-quirofanos">
+    <div class="accordion-header" onclick="toggleAccordion('sec-quirofanos')">
+        <div class="accordion-title">
+            <span class="accordion-icon">▼</span>
+            <h3>Quirófanos y Salas de Cirugía</h3>
+        </div>
+    </div>
+    <div class="accordion-content">
+        <!-- Recursos Libres -->
+        <div style="margin-bottom: 20px;">
+            <h4 style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Quirófanos Libres (Disponibles para Asignar)</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                {% for recurso in recursos %}
+                    {% if recurso.tipo == 'QUIROFANO' and recurso.estado == 'DISPONIBLE' %}
+                        <div class="free-resource-pill" onclick="openAssignModal('{{ recurso.id }}', '{{ recurso.codigo }}')" title="Asignar {{ recurso.codigo }}">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="12 2 2 22 22 22"></polygon>
+                                <line x1="12" y1="13" x2="12" y2="17"></line>
+                                <line x1="10" y1="15" x2="14" y2="15"></line>
+                            </svg>
+                            {{ recurso.codigo }}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Recursos Ocupados -->
+        <h4 style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Quirófanos en Uso / Limpieza</h4>
+        <div class="resources-list-view">
+            {% for recurso in recursos %}
+                {% if recurso.tipo == 'QUIROFANO' and recurso.estado != 'DISPONIBLE' %}
+                    <div class="resource-list-item state-{{ recurso.estado|lower }}" data-tipo="{{ recurso.tipo }}">
+                        <div class="resource-header">
+                            <span class="resource-code">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 2 22 22 22"></polygon>
+                                    <line x1="12" y1="13" x2="12" y2="17"></line>
+                                    <line x1="10" y1="15" x2="14" y2="15"></line>
+                                </svg>
+                                {{ recurso.codigo }}
+                            </span>
+                            <span class="resource-badge">{{ recurso.get_estado_display }}</span>
+                        </div>
+                        <div class="resource-details">
+                            <div style="font-weight: 500; font-size: 0.75rem;">{{ recurso.descripcion }}</div>
+                            {% if recurso.estado == 'OCUPADO' or recurso.estado == 'PRE_ALTA' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                    <div class="resource-patient">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                                        </svg>
+                                        <span>{{ adm.paciente.nombre }} {{ adm.paciente.apellido|slice:":12" }}...</span>
+                                        {% if adm.fecha_admision_cama %}
+                                            <div style="font-size: 0.65rem; color: var(--text-secondary); margin-top: 2px;">
+                                                ⏱️ Ingresado hace {{ adm.fecha_admision_cama|timesince }}
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        <div class="resource-actions">
+                            {% if recurso.estado == 'OCUPADO' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                                            <button class="btn btn-primary btn-sm btn-full" onclick="ordenarPreAlta('{{ adm.id }}')">Emitir Pre-Alta</button>
+                                            <button class="btn btn-danger btn-sm btn-full" onclick="liberarRecurso('{{ adm.id }}')">Alta Directa</button>
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% elif recurso.estado == 'PRE_ALTA' %}
+                                {% for adm in recurso.admisiones_activas.all %}
+                                    {% if adm.estado != 'ALTA' %}
+                                        <button class="btn btn-success btn-sm btn-full" onclick="confirmarSalidaFisica('{{ adm.id }}')">Confirmar Salida</button>
+                                    {% endif %}
+                                {% endfor %}
+                            {% elif recurso.estado == 'LIMPIEZA' %}
+                                <button class="btn btn-secondary btn-sm btn-full" onclick="registrarLimpiezaCompletada('{{ recurso.id }}')" style="border-color: var(--color-limpieza); color: var(--color-limpieza); background: rgba(124, 58, 237, 0.05); font-weight: bold;">✓ Completar Limpieza</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentTypeFilter = 'TODOS';
+
+    function changeTypeFilter(tipo) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+        currentTypeFilter = tipo;
+        filterResourcesLive();
+    }
+
+    function filterResourcesLive() {
+        const query = document.getElementById('resourceSearch').value.toLowerCase().trim();
+        const stateValue = document.getElementById('stateFilter').value;
+
+        document.querySelectorAll('.accordion-section').forEach(section => {
+            let visibleCount = 0;
+            const cards = section.querySelectorAll('.resource-list-item, .free-resource-pill');
+
+            cards.forEach(card => {
+                const isPill = card.classList.contains('free-resource-pill');
+                const code = (isPill ? card.textContent : card.querySelector('.resource-code').textContent).toLowerCase().trim();
+                const desc = isPill ? '' : card.querySelector('.resource-details div').textContent.toLowerCase();
+                
+                // Tipo dependiente de la secciÃ³n
+                let type = '';
+                if (section.id === 'sec-camas') type = 'CAMA';
+                else if (section.id === 'sec-boxes') type = 'BOX';
+                else if (section.id === 'sec-quirofanos') type = 'QUIROFANO';
+
+                let state = '';
+                if (isPill || card.classList.contains('state-disponible')) state = 'DISPONIBLE';
+                else if (card.classList.contains('state-ocupado')) state = 'OCUPADO';
+                else if (card.classList.contains('state-pre_alta')) state = 'PRE_ALTA';
+                else if (card.classList.contains('state-limpieza')) state = 'LIMPIEZA';
+                else if (card.classList.contains('state-mantenimiento')) state = 'MANTENIMIENTO';
+
+                const matchesQuery = !query || code.includes(query) || desc.includes(query);
+                const matchesType = currentTypeFilter === 'TODOS' || type === currentTypeFilter;
+                const matchesState = stateValue === 'ALL' || state === stateValue;
+
+                if (matchesQuery && matchesType && matchesState) {
+                    card.style.display = isPill ? 'flex' : 'flex';
+                    visibleCount++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+
+            if (visibleCount > 0) {
+                section.style.display = 'block';
+            } else {
+                section.style.display = 'none';
+            }
+        });
+    }
+
+    function toggleAccordion(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.toggle('collapsed');
+            localStorage.setItem(id + '-collapsed', el.classList.contains('collapsed'));
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        ['sec-camas', 'sec-boxes', 'sec-quirofanos'].forEach(id => {
+            const isCollapsed = localStorage.getItem(id + '-collapsed') === 'true';
+            const el = document.getElementById(id);
+            if (el && isCollapsed) {
+                el.classList.add('collapsed');
+            }
+        });
+
+        // Iniciar polling de estado cada 30 segundos
+        setInterval(pollStatus, 30000);
+    });
+
+    // Auto-refresh stats desde la API
+    function pollStatus() {
+        fetch('/api/status/')
+            .then(res => res.json())
+            .then(data => {
+                if (data.stats) {
+                    // Actualizar contadores globales en la UI
+                    const elAdmisiones = document.querySelector('.stat-card.total:nth-child(1) .stat-value');
+                    const elLibres = document.querySelector('.stat-card.disponible .stat-value');
+                    const elOcupadas = document.querySelector('.stat-card.ocupado .stat-value');
+                    const elLimpieza = document.querySelector('.stat-card.limpieza .stat-value');
+                    const elBoxes = document.querySelector('.stat-card.total:nth-child(5) .stat-value');
+                    
+                    if (elAdmisiones) elAdmisiones.textContent = data.stats.admisiones_activas;
+                    if (elLibres) elLibres.textContent = data.stats.camas_libres;
+                    if (elOcupadas) elOcupadas.textContent = data.stats.camas_ocupadas;
+                    if (elLimpieza) elLimpieza.textContent = data.stats.camas_limpieza;
+                    if (elBoxes) elBoxes.textContent = data.stats.boxes_libres;
+
+                    // Mostrar alertas de tiempos de espera críticos en consola médica si corresponde
+                    if (data.alertas_criticas && data.alertas_criticas.length > 0) {
+                        const count = data.alertas_criticas.length;
+                        console.warn(`[TPS Monitor] ${count} paciente(s) crítico(s) superando tiempo de espera.`);
+                    }
+                }
+            })
+            .catch(err => console.error("Error en polling de status", err));
+    }
+</script>
+{% endblock %}

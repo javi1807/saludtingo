@@ -1,0 +1,132 @@
+{% extends 'urgencias/base.html' %}
+
+{% block title %}Consola Médica{% endblock %}
+
+{% block section_title %}Consola Médica & Triage{% endblock %}
+
+{% block content %}
+<!-- Consola del Médico de Guardia (Admisiones Activas) -->
+<div class="glass-panel">
+    <h2 class="panel-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 14.5a3 3 0 0 1-6 0v-4"/><circle cx="16" cy="18" r="2"/><path d="M12 2h8M3 10a7 7 0 0 0 14 0v-1A4 4 0 0 0 9 9v1a3 3 0 0 1-6 0z"/>
+        </svg>
+        Pacientes Admitidos en Urgencias
+    </h2>
+    
+    {% if not admisiones %}
+        <p style="color: var(--text-secondary); text-align: center; padding: 20px;">No hay admisiones clínicas activas en el monitor.</p>
+    {% else %}
+        <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-secondary);">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="searchDni" class="form-control" placeholder="Buscar por DNI o Nombre del paciente..." onkeyup="filterPacientes()" style="max-width: 350px;">
+        </div>
+        
+        <div class="table-responsive">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Paciente</th>
+                        <th>Gravedad (Triage)</th>
+                        <th>Motivo y Tiempos</th>
+                        <th>Cama Asignada</th>
+                        <th>Cuenta Facturación</th>
+                        <th>Acciones Clínicas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for adm in admisiones %}
+                    <tr>
+                        <td><strong>#{{ adm.id }}</strong></td>
+                        <td>
+                            <div style="font-weight: 600;">{{ adm.paciente.nombre }} {{ adm.paciente.apellido }}</div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary);">HC: {{ adm.paciente.historia_clinica_num }} | DNI: {{ adm.paciente.documento_identidad }}</div>
+                            {% if adm.paciente.documento_identidad|slice:":3" == "NN-" %}
+                                <button class="btn btn-secondary btn-sm" style="background: rgba(2, 132, 199, 0.08); border-color: rgba(2, 132, 199, 0.2); color: var(--accent-cyan); font-size: 0.65rem; padding: 2px 6px; margin-top: 4px; font-weight: 700;" onclick="openRegularizeModal('{{ adm.id }}', '{{ adm.paciente.documento_identidad }}')">
+                                    ✍ Regularizar Datos
+                                </button>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="triage-badge {{ adm.triage_nivel|lower }}">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+                                {{ adm.get_triage_nivel_display }}
+                            </span>
+                        </td>
+                        <td style="max-width: 200px;">
+                            <div style="font-size: 0.8rem; font-weight: 500; margin-bottom: 4px;">{{ adm.fecha_ingreso|date:"H:i d/m" }} (hace {{ adm.fecha_ingreso|timesince }})</div>
+                            
+                            {% if not adm.recurso_asignado and adm.triage_nivel in "ROJO,NARANJA" %}
+                                <div style="font-size: 0.7rem; color: #dc2626; font-weight: bold; background: #fee2e2; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px; animation: pulse 2s infinite;">
+                                    ⚠️ ALERTA: Retraso Crítico
+                                </div>
+                            {% endif %}
+
+                            <details style="cursor: pointer; font-size: 0.75rem; color: var(--text-secondary);">
+                                <summary style="font-weight: bold; color: var(--accent-teal);">Ver motivo consulta</summary>
+                                <div style="padding: 6px; background: rgba(0,0,0,0.02); border-left: 2px solid var(--accent-teal); margin-top: 4px; border-radius: 4px;">
+                                    {{ adm.motivo_consulta }}
+                                </div>
+                            </details>
+                        </td>
+                        <td>
+                            {% if adm.recurso_asignado %}
+                                {% if adm.recurso_asignado.estado == 'PRE_ALTA' %}
+                                    <span style="color: var(--color-pre-alta); font-weight: 600;">⏳ PRE-ALTA ({{ adm.recurso_asignado.codigo }})</span>
+                                {% else %}
+                                    <span style="color: var(--color-disponible); font-weight: 600;">🏥 Asignado: {{ adm.recurso_asignado.codigo }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span style="color: var(--color-ocupado); font-weight: 500;">⚠️ Sin Cama Asignada</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong style="color: var(--text-primary); font-weight: 700;">${{ adm.cuenta_facturacion.total_cargado|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 4px;">
+                                <button class="btn btn-secondary btn-sm" onclick="openCargoModal('{{ adm.id }}', '{{ adm.paciente.nombre }} {{ adm.paciente.apellido }}')">✚ Insumo</button>
+                                
+                                {% if not adm.recurso_asignado %}
+                                    <button class="btn btn-primary btn-sm" onclick="openAssignModal(null, null, '{{ adm.id }}')">Asignar Cama</button>
+                                {% else %}
+                                    {% if adm.recurso_asignado.estado == 'OCUPADO' %}
+                                        <button class="btn btn-secondary btn-sm" onclick="ordenarPreAlta('{{ adm.id }}')" style="color: var(--color-pre-alta); border-color: rgba(249, 115, 22, 0.2);">Emitir Pre-Alta</button>
+                                    {% endif %}
+                                {% endif %}
+                                
+                                <button class="btn btn-danger btn-sm" onclick="liberarRecurso('{{ adm.id }}')">Alta</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function filterPacientes() {
+        const query = document.getElementById('searchDni').value.toLowerCase().trim();
+        const rows = document.querySelectorAll('.custom-table tbody tr');
+
+        rows.forEach(row => {
+            // La columna índice 1 contiene la información del paciente (Nombre y DNI)
+            const cellText = row.cells[1].textContent.toLowerCase();
+            
+            if (!query || cellText.includes(query)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+</script>
+{% endblock %}

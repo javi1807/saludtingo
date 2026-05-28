@@ -1,0 +1,140 @@
+{% extends 'urgencias/base.html' %}
+
+{% block title %}Admisión y Registro de Pacientes{% endblock %}
+
+{% block section_title %}Admisión y Registro de Pacientes{% endblock %}
+
+{% block content %}
+<!-- Módulo de Admisión y Registro (DNI) -->
+<div class="glass-panel">
+    <h2 class="panel-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+        </svg>
+        Registro de Ingreso Clínico
+    </h2>
+
+    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+        <div style="flex: 1; padding: 10px; border-radius: 6px; background: {% if camas_libres > 0 %}rgba(16, 185, 129, 0.1){% else %}rgba(239, 68, 68, 0.1){% endif %}; border: 1px solid {% if camas_libres > 0 %}var(--color-disponible){% else %}#ef4444{% endif %}; color: {% if camas_libres > 0 %}var(--color-disponible){% else %}#ef4444{% endif %}; text-align: center; font-weight: bold; font-size: 0.85rem;">
+            🏥 Camas Libres: {{ camas_libres }}
+        </div>
+        <div style="flex: 1; padding: 10px; border-radius: 6px; background: {% if boxes_libres > 0 %}rgba(16, 185, 129, 0.1){% else %}rgba(239, 68, 68, 0.1){% endif %}; border: 1px solid {% if boxes_libres > 0 %}var(--color-disponible){% else %}#ef4444{% endif %}; color: {% if boxes_libres > 0 %}var(--color-disponible){% else %}#ef4444{% endif %}; text-align: center; font-weight: bold; font-size: 0.85rem;">
+            🩺 Boxes Libres: {{ boxes_libres }}
+        </div>
+    </div>
+
+    <form id="registrarPacienteForm" onsubmit="registrarPaciente(event)">
+        <div class="form-group">
+            <label for="documento_identidad">DNI / Documento Identidad</label>
+            <input type="text" id="documento_identidad" name="documento_identidad" class="form-control" placeholder="DNI del paciente para validar" required>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="nombre">Nombre</label>
+                <input type="text" id="nombre" name="nombre" class="form-control" placeholder="Nombre" required>
+            </div>
+            <div class="form-group">
+                <label for="apellido">Apellido</label>
+                <input type="text" id="apellido" name="apellido" class="form-control" placeholder="Apellido" required>
+            </div>
+        </div>
+        <!-- Evaluación de Signos Vitales (Triaje Automático) -->
+        <div class="form-group" style="margin-top: 10px; margin-bottom: 12px; border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; background: #f8fafc;">
+            <label style="font-weight: 700; color: var(--accent-teal); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; font-size: 0.8rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                Evaluación de Signos Vitales (Triaje)
+            </label>
+            <div class="form-row" style="grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="signo_fc" style="font-size: 0.65rem; font-weight: bold;">FC (lpm)</label>
+                    <input type="number" id="signo_fc" class="form-control" style="padding: 4px 6px; font-size: 0.75rem; text-align: center;" placeholder="FC" value="75" min="20" max="250" oninput="calcularTriajeSugerido()">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="signo_pas" style="font-size: 0.65rem; font-weight: bold;">PAS (mmHg)</label>
+                    <input type="number" id="signo_pas" class="form-control" style="padding: 4px 6px; font-size: 0.75rem; text-align: center;" placeholder="PAS" value="120" min="40" max="260" oninput="calcularTriajeSugerido()">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="signo_sato2" style="font-size: 0.65rem; font-weight: bold;">SatO2 (%)</label>
+                    <input type="number" id="signo_sato2" class="form-control" style="padding: 4px 6px; font-size: 0.75rem; text-align: center;" placeholder="SatO2" value="98" min="50" max="100" oninput="calcularTriajeSugerido()">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="signo_temp" style="font-size: 0.65rem; font-weight: bold;">Temp (°C)</label>
+                    <input type="number" id="signo_temp" class="form-control" style="padding: 4px 6px; font-size: 0.75rem; text-align: center;" placeholder="Temp" value="36.5" step="0.1" min="30" max="45" oninput="calcularTriajeSugerido()">
+                </div>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 8px; font-weight: 500;" id="triaje_calculadora_sugerencia">
+                Sugerencia sugerida: <strong style="color: var(--accent-teal);">Azul (Nivel V)</strong> (Signos estables)
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="fecha_nacimiento">F. Nacimiento</label>
+                <input type="date" id="fecha_nacimiento" name="fecha_nacimiento" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="triage_nivel">Nivel de Gravedad</label>
+                <select id="triage_nivel" name="triage_nivel" class="form-control">
+                    <option value="ROJO">Rojo (Nivel I - Shock)</option>
+                    <option value="NARANJA">Naranja (Nivel II - Crítico)</option>
+                    <option value="AMARILLO" selected>Amarillo (Nivel III - Urgente)</option>
+                    <option value="VERDE">Verde (Nivel IV - Menor)</option>
+                    <option value="AZUL">Azul (Nivel V - No Urgente)</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="motivo_consulta">Síntomas / Diagnóstico de Entrada</label>
+            <textarea id="motivo_consulta" name="motivo_consulta" class="form-control" rows="2" placeholder="Motivo de la consulta médica..." required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Validar & Registrar Ingreso</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Función para calcular triaje sugerido en base a signos vitales (Regla de negocio)
+    function calcularTriajeSugerido() {
+        const fc = parseInt(document.getElementById('signo_fc').value) || 75;
+        const pas = parseInt(document.getElementById('signo_pas').value) || 120;
+        const sato2 = parseInt(document.getElementById('signo_sato2').value) || 98;
+        const temp = parseFloat(document.getElementById('signo_temp').value) || 36.5;
+        
+        let nivel = "AZUL";
+        let desc = "Azul (Nivel V - No Urgente)";
+        let razon = "Signos vitales normales y estables.";
+
+        if (sato2 < 90 || pas < 80 || pas > 200 || fc < 40 || fc > 140) {
+            nivel = "NARANJA";
+            desc = "Naranja (Nivel II - Emergencia)";
+            razon = "Saturación baja (<90%), presión crítica o pulso inestable.";
+        } else if ((sato2 >= 90 && sato2 <= 94) || (temp >= 39.0) || (pas >= 80 && pas < 90) || (pas > 160 && pas <= 200) || (fc >= 40 && fc < 50) || (fc > 120 && fc <= 140)) {
+            nivel = "AMARILLO";
+            desc = "Amarillo (Nivel III - Urgente)";
+            razon = "Signos vitales normales alterados o fiebre alta registrada.";
+        } else if ((temp >= 37.6 && temp < 39.0) || (fc >= 100 && fc <= 120)) {
+            nivel = "VERDE";
+            desc = "Verde (Nivel IV - Menor)";
+            razon = "Febrícula leve o taquicardia moderada.";
+        } else {
+            nivel = "AZUL";
+            desc = "Azul (Nivel V - No Urgente)";
+            razon = "Signos estables y parámetros normales.";
+        }
+
+        // Seleccionar en el dropdown
+        const selectEl = document.getElementById('triage_nivel');
+        selectEl.value = nivel;
+        
+        // Actualizar de manera interactiva la sugerencia
+        document.getElementById('triaje_calculadora_sugerencia').innerHTML = `TPS Sugiere: <strong style="color: var(--accent-teal);">${desc}</strong> (${razon})`;
+    }
+
+    // Inicializar el triaje sugerido al cargar la página
+    window.addEventListener('DOMContentLoaded', (event) => {
+        calcularTriajeSugerido();
+    });
+</script>
+{% endblock %}

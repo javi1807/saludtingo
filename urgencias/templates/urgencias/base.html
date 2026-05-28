@@ -1,0 +1,745 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedSalud Urgencias - {% block title %}Consola de Control Transaccional{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'urgencias/css/dashboard.css' %}?v=1.5">
+    <style>
+        /* Animación para la línea de ECG */
+        .ecg-line {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: ecgPulse 4s linear infinite;
+        }
+        @keyframes ecgPulse {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    {% csrf_token %}
+
+    <!-- Main Layout: Sidebar + Viewport -->
+    <div class="dashboard-layout">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar-nav">
+            <!-- Brand Section inside Sidebar -->
+            <div class="brand-section">
+                <!-- SVG: Cruz Médica de Alta Fidelidad con ECG -->
+                <svg class="brand-logo-svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" fill="rgba(20, 184, 166, 0.1)"></rect>
+                    <path d="M12 8v8M8 12h8" stroke="var(--accent-teal)" stroke-width="3"></path>
+                </svg>
+                
+                <div class="brand-text">
+                    <h1>MedSalud</h1>
+                    <p>Emergencias Central</p>
+                </div>
+            </div>
+            
+            <!-- Navigation Links -->
+            <div class="sidebar-menu">
+                <a href="{% url 'dashboard' %}" class="nav-tab-btn {% if active_page == 'dashboard' %}active{% endif %}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" fill="none"></rect>
+                        <path d="M9 3v18M3 9h18M3 15h18M15 3v18"></path>
+                    </svg>
+                    <span>Overview y Camas</span>
+                </a>
+                
+                <a href="{% url 'consola_medica' %}" class="nav-tab-btn {% if active_page == 'consola_medica' %}active{% endif %}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                    </svg>
+                    <span>Consola Médica</span>
+                </a>
+                
+                <a href="{% url 'admision' %}" class="nav-tab-btn {% if active_page == 'admision' %}active{% endif %}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                    </svg>
+                    <span>Admisión (DNI)</span>
+                </a>
+                
+                <a href="{% url 'limpieza' %}" class="nav-tab-btn {% if active_page == 'limpieza' %}active{% endif %}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    <span>Limpieza</span>
+                </a>
+                
+                <a href="{% url 'analiticas' %}" class="nav-tab-btn {% if active_page == 'analiticas' %}active{% endif %}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 3v18h18M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path>
+                    </svg>
+                    <span>Analíticas</span>
+                </a>
+            </div>
+
+            <!-- Status Indicator at Bottom -->
+            <div class="sidebar-footer">
+                <div class="live-indicator">
+                    TPS CLINIC ACTIVE
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <div class="main-content-area">
+            
+            <!-- Top Bar inside Content Area -->
+            <header class="top-bar-clinical">
+                <div class="page-title-section">
+                    <h2>{% block section_title %}Urgencias Central{% endblock %}</h2>
+                </div>
+                
+                <div class="top-bar-actions">
+                    <!-- Botón de Bypass de Shock Trauma -->
+                    <button class="btn btn-danger shock-trauma-pulse" onclick="ejecutarBypassShockTrauma()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/>
+                        </svg>
+                        🚨 BYPASS: SHOCK TRAUMA
+                    </button>
+                </div>
+            </header>
+
+            <!-- Alert Banner inside Content Area -->
+            <div class="alert-banner">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M12 16v-4M12 8h.01"/>
+                </svg>
+                <div>
+                    <strong>Monitor de Seguridad Clínica:</strong> Transacciones de base de datos aisladas (DNI único, bloqueo de filas, control de almacén).
+                </div>
+            </div>
+
+            <!-- Content Viewport -->
+            <main class="content-viewport">
+                {% block content %}
+                {% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- MODAL: ASIGNAR RECURSO -->
+    <div class="modal-backdrop" id="assignModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 4v16M22 8v12M2 8h20M2 14h20M6 6h4v3H6z"/>
+                    </svg>
+                    Asignar Recurso Clínico
+                </h3>
+                <button class="modal-close" onclick="closeModal('assignModal')">&times;</button>
+            </div>
+            <form id="assignResourceForm" onsubmit="asignarRecursoSubmit(event)">
+                <input type="hidden" id="assign_recurso_id" name="recurso_id">
+                
+                <div class="form-group" id="recurso_codigo_display_group" style="display: none;">
+                    <label>Recurso Seleccionado</label>
+                    <input type="text" id="assign_recurso_codigo" class="form-control" readonly>
+                </div>
+
+                <div class="form-group" id="recurso_select_group">
+                    <label for="select_recurso_id">Seleccionar Cama/Recurso Disponible</label>
+                    <select id="select_recurso_id" class="form-control">
+                        <option value="">-- Seleccionar Recurso --</option>
+                        {% for rec in recursos %}
+                            {% if rec.estado == 'DISPONIBLE' %}
+                                <option value="{{ rec.id }}">{{ rec.codigo }} - {{ rec.get_tipo_display }} ({{ rec.descripcion }})</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="assign_admision_id">Seleccionar Paciente (Admisión en Espera)</label>
+                    <select id="assign_admision_id" name="admision_id" class="form-control" required>
+                        <option value="">-- Seleccionar Paciente --</option>
+                        {% for adm in admisiones %}
+                            {% if not adm.recurso_asignado %}
+                                <option value="{{ adm.id }}">{{ adm.paciente.nombre }} {{ adm.paciente.apellido }} (Gravedad: {{ adm.get_triage_nivel_display }})</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('assignModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Confirmar Asignación</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: CARGAR INSUMO -->
+    <div class="modal-backdrop" id="cargoModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                    Registrar Cargo e Insumo Médico
+                </h3>
+                <button class="modal-close" onclick="closeModal('cargoModal')">&times;</button>
+            </div>
+            <form id="cargoForm" onsubmit="aplicarCargoSubmit(event)">
+                <input type="hidden" id="cargo_admision_id" name="admision_id">
+                
+                <div class="form-group">
+                    <label>Paciente</label>
+                    <input type="text" id="cargo_paciente_nombre" class="form-control" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="cargo_insumo_id">Insumo Médico / Medicación</label>
+                    <select id="cargo_insumo_id" name="insumo_id" class="form-control" required>
+                        <option value="">-- Seleccionar Medicamento --</option>
+                        {% for ins in insumos %}
+                            <option value="{{ ins.id }}" {% if ins.stock <= 0 %}disabled{% endif %}>
+                                {{ ins.nombre }} (${{ ins.precio_unitario }}) - Stock: {{ ins.stock }} {% if ins.stock <= 0 %}(Agotado){% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="cargo_cantidad">Cantidad Utilizada</label>
+                    <input type="number" id="cargo_cantidad" name="cantidad" class="form-control" value="1" min="1" required>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('cargoModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Aplicar Débito & Cargo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: REGULARIZAR PACIENTE NN -->
+    <div class="modal-backdrop" id="regularizeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+                    </svg>
+                    Regularizar Paciente Crítico NN
+                </h3>
+                <button class="modal-close" onclick="closeModal('regularizeModal')">&times;</button>
+            </div>
+            <form id="regularizeForm" onsubmit="regularizarPacienteSubmit(event)">
+                <input type="hidden" id="regularize_admision_id" name="admision_id">
+                
+                <div class="form-group">
+                    <label>Código Temporal NN</label>
+                    <input type="text" id="regularize_nn_codigo" class="form-control" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="regularize_documento_identidad">DNI / Documento de Identidad Real</label>
+                    <input type="text" id="regularize_documento_identidad" name="documento_identidad" class="form-control" placeholder="DNI definitivo" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="regularize_nombre">Nombre Real</label>
+                        <input type="text" id="regularize_nombre" name="nombre" class="form-control" placeholder="Nombre" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regularize_apellido">Apellido Real</label>
+                        <input type="text" id="regularize_apellido" name="apellido" class="form-control" placeholder="Apellido" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="regularize_fecha_nacimiento">Fecha de Nacimiento</label>
+                    <input type="date" id="regularize_fecha_nacimiento" name="fecha_nacimiento" class="form-control" required>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('regularizeModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" style="background-color: var(--accent-cyan); border-color: var(--accent-cyan);">Guardar Datos Definitivos</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: MENSAJES DEL SISTEMA -->
+    <div class="modal-backdrop feedback-modal" id="messageModal">
+        <div class="modal-content feedback-content">
+            <div class="modal-header feedback-header">
+                <h3>
+                    <span class="feedback-icon" id="messageModalIcon">i</span>
+                    <span id="messageModalTitle">Mensaje</span>
+                </h3>
+                <button class="modal-close" onclick="closeMessageModal()">&times;</button>
+            </div>
+            <p class="modal-message" id="messageModalBody"></p>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="messageModalButton" onclick="closeMessageModal()">Entendido</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CONFIRMACIONES -->
+    <div class="modal-backdrop feedback-modal" id="confirmModal">
+        <div class="modal-content feedback-content">
+            <div class="modal-header feedback-header">
+                <h3>
+                    <span class="feedback-icon warning" id="confirmModalIcon">!</span>
+                    <span id="confirmModalTitle">Confirmar acción</span>
+                </h3>
+                <button class="modal-close" onclick="closeConfirmModal(false)">&times;</button>
+            </div>
+            <p class="modal-message" id="confirmModalBody"></p>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="confirmCancelButton" onclick="closeConfirmModal(false)">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmAcceptButton" onclick="closeConfirmModal(true)">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // Obtener Token CSRF de Django
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        // Abrir y cerrar modals
+        function openAssignModal(recursoId, recursoCodigo, admisionId = null) {
+            const modal = document.getElementById('assignModal');
+            const recGroup = document.getElementById('recurso_codigo_display_group');
+            const selectGroup = document.getElementById('recurso_select_group');
+            const selectRecurso = document.getElementById('select_recurso_id');
+            const selectAdmision = document.getElementById('assign_admision_id');
+
+            // Resetear
+            selectRecurso.required = false;
+            selectAdmision.value = "";
+            document.getElementById('assign_recurso_id').value = "";
+
+            if (recursoId) {
+                // Asignar paciente a una cama específica
+                document.getElementById('assign_recurso_id').value = recursoId;
+                document.getElementById('assign_recurso_codigo').value = recursoCodigo;
+                recGroup.style.display = 'block';
+                selectGroup.style.display = 'none';
+            } else {
+                // Asignar cama a un paciente específico
+                recGroup.style.display = 'none';
+                selectGroup.style.display = 'block';
+                selectRecurso.required = true;
+                if (admisionId) {
+                    selectAdmision.value = admisionId;
+                }
+            }
+
+            modal.classList.add('show');
+        }
+
+        function openCargoModal(admisionId, pacienteNombre) {
+            const modal = document.getElementById('cargoModal');
+            document.getElementById('cargo_admision_id').value = admisionId;
+            document.getElementById('cargo_paciente_nombre').value = pacienteNombre;
+            document.getElementById('cargo_insumo_id').value = "";
+            document.getElementById('cargo_cantidad').value = "1";
+            modal.classList.add('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        let messageModalCallback = null;
+        let confirmModalResolver = null;
+
+        function showMessageModal({ title = 'Mensaje', message = '', type = 'info', buttonText = 'Entendido', onClose = null }) {
+            const modal = document.getElementById('messageModal');
+            const icon = document.getElementById('messageModalIcon');
+            const button = document.getElementById('messageModalButton');
+
+            document.getElementById('messageModalTitle').textContent = title;
+            document.getElementById('messageModalBody').textContent = message;
+            button.textContent = buttonText;
+            icon.className = `feedback-icon ${type}`;
+            icon.textContent = type === 'success' ? '✓' : type === 'error' ? '!' : 'i';
+            button.className = type === 'error' ? 'btn btn-danger' : 'btn btn-primary';
+            messageModalCallback = onClose;
+            modal.classList.add('show');
+        }
+
+        function closeMessageModal() {
+            document.getElementById('messageModal').classList.remove('show');
+            const callback = messageModalCallback;
+            messageModalCallback = null;
+            if (typeof callback === 'function') {
+                callback();
+            }
+        }
+
+        function showConfirmModal({ title = 'Confirmar acción', message = '', confirmText = 'Confirmar', cancelText = 'Cancelar', variant = 'primary' }) {
+            const modal = document.getElementById('confirmModal');
+            const acceptButton = document.getElementById('confirmAcceptButton');
+
+            document.getElementById('confirmModalTitle').textContent = title;
+            document.getElementById('confirmModalBody').textContent = message;
+            document.getElementById('confirmCancelButton').textContent = cancelText;
+            acceptButton.textContent = confirmText;
+            acceptButton.className = variant === 'danger' ? 'btn btn-danger' : 'btn btn-primary';
+            modal.classList.add('show');
+
+            return new Promise(resolve => {
+                confirmModalResolver = resolve;
+            });
+        }
+
+        function closeConfirmModal(confirmed) {
+            document.getElementById('confirmModal').classList.remove('show');
+            if (confirmModalResolver) {
+                confirmModalResolver(confirmed);
+                confirmModalResolver = null;
+            }
+        }
+
+        function showSuccessAndReload(message) {
+            showMessageModal({
+                title: 'Operación completada',
+                message,
+                type: 'success',
+                buttonText: 'Actualizar vista',
+                onClose: () => window.location.reload()
+            });
+        }
+
+        function showError(message) {
+            showMessageModal({
+                title: 'No se pudo completar',
+                message,
+                type: 'error'
+            });
+        }
+
+        // Enviar Registro de Paciente
+        function registrarPaciente(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+
+            fetch('/api/paciente/registrar/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Ocurrió un error al procesar el registro.');
+            });
+        }
+
+        // Confirmar asignación de recurso
+        function asignarRecursoSubmit(event) {
+            event.preventDefault();
+            
+            const recursoId = document.getElementById('assign_recurso_id').value || document.getElementById('select_recurso_id').value;
+            const admisionId = document.getElementById('assign_admision_id').value;
+
+            if (!recursoId || !admisionId) {
+                showMessageModal({
+                    title: 'Faltan datos',
+                    message: 'Debe seleccionar un recurso y un paciente.',
+                    type: 'info'
+                });
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('recurso_id', recursoId);
+            formData.append('admision_id', admisionId);
+
+            fetch('/api/recurso/asignar/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Ocurrió un error al asignar el recurso.');
+            });
+        }
+
+        // Aplicar cargo de insumos
+        function aplicarCargoSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+
+            fetch('/api/facturacion/cargo/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Ocurrió un error al cargar el insumo.');
+            });
+        }
+
+        // Ejecutar Bypass de Shock Trauma
+        async function ejecutarBypassShockTrauma() {
+            const confirmed = await showConfirmModal({
+                title: 'Activar Shock Trauma',
+                message: 'Se registrará un paciente NN y se bloqueará inmediatamente una cama disponible.',
+                confirmText: 'Activar bypass',
+                variant: 'danger'
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            fetch('/api/paciente/shock-trauma/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Error al procesar el Bypass de Shock Trauma.');
+            });
+        }
+
+        // Ordenar Pre-Alta (Médico)
+        async function ordenarPreAlta(admisionId) {
+            const confirmed = await showConfirmModal({
+                title: 'Emitir pre-alta',
+                message: 'El recurso quedará en preparación de salida, pero seguirá retenido hasta confirmar la salida física.',
+                confirmText: 'Emitir pre-alta'
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('admision_id', admisionId);
+
+            fetch('/api/recurso/pre-alta/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Error al registrar la orden de pre-alta.');
+            });
+        }
+
+        // Confirmar Salida Física (Admisión/Enfermería)
+        async function confirmarSalidaFisica(admisionId) {
+            const confirmed = await showConfirmModal({
+                title: 'Confirmar salida física',
+                message: 'Se dará el alta definitiva a la admisión y el recurso pasará a limpieza y desinfección.',
+                confirmText: 'Confirmar salida'
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('admision_id', admisionId);
+
+            fetch('/api/recurso/confirmar-salida/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Error al confirmar la salida del paciente.');
+            });
+        }
+
+        // Registrar Limpieza Completada (Personal de Limpieza)
+        async function registrarLimpiezaCompletada(recursoId) {
+            const confirmed = await showConfirmModal({
+                title: 'Completar limpieza',
+                message: 'El recurso volverá a estar disponible para nuevas admisiones.',
+                confirmText: 'Completar limpieza'
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('recurso_id', recursoId);
+
+            fetch('/api/recurso/limpieza-completada/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Error al registrar el término de la limpieza.');
+            });
+        }
+
+        // Liberar recurso (dar de alta - bypass administrativo)
+        async function liberarRecurso(admisionId) {
+            const confirmed = await showConfirmModal({
+                title: 'Procesar alta directa',
+                message: 'Se liberará la cama y se cerrará la admisión directamente.',
+                confirmText: 'Procesar alta',
+                variant: 'danger'
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('admision_id', admisionId);
+
+            fetch('/api/recurso/liberar/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Ocurrió un error al liberar la cama.');
+            });
+        }
+
+        // Abrir modal de regularización
+        function openRegularizeModal(admisionId, nnCodigo) {
+            const modal = document.getElementById('regularizeModal');
+            document.getElementById('regularize_admision_id').value = admisionId;
+            document.getElementById('regularize_nn_codigo').value = nnCodigo;
+            document.getElementById('regularize_documento_identidad').value = "";
+            document.getElementById('regularize_nombre').value = "";
+            document.getElementById('regularize_apellido').value = "";
+            document.getElementById('regularize_fecha_nacimiento').value = "";
+            modal.classList.add('show');
+        }
+
+        // Confirmar regularización de datos de paciente NN
+        function regularizarPacienteSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+
+            fetch('/api/paciente/regularizar/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Ocurrió un error al regularizar el paciente.');
+            });
+        }
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

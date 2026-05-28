@@ -1,0 +1,254 @@
+{% extends 'urgencias/base.html' %}
+
+{% block title %}Gráficos y Analíticas de Operación{% endblock %}
+
+{% block section_title %}Gráficos y Analíticas de Operación{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    .charts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    .chart-card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        border: 1px solid var(--border-color-light);
+    }
+    .chart-card h3 {
+        margin-top: 0;
+        margin-bottom: 5px;
+        font-size: 1rem;
+        color: var(--text-primary);
+    }
+    .chart-card span {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        display: block;
+        margin-bottom: 15px;
+    }
+    .chart-container {
+        position: relative;
+        height: 250px;
+        width: 100%;
+    }
+    .billing-summary {
+        margin-top: 15px;
+        padding: 15px;
+        background: #f8fafc;
+        border-radius: 8px;
+        text-align: center;
+    }
+    .billing-summary strong {
+        display: block;
+        font-size: 1.5rem;
+        color: #0d9488;
+        margin: 5px 0;
+    }
+</style>
+
+<section class="charts-section">
+    <!-- CATEGORÍA 1: RECURSOS -->
+    <div class="analytics-category">
+        <h2 style="font-size: 1.2rem; color: var(--text-primary); margin-bottom: 15px;">Capacidad y Recursos Críticos</h2>
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Recursos por Estado</h3>
+                <span>Total: {{ stats.total_recursos }}</span>
+                <div class="chart-container"><canvas id="recursosChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Ocupación por Tipo</h3>
+                <span>Distribución porcentual de ocupación</span>
+                <div class="chart-container"><canvas id="ocupacionChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CATEGORÍA 2: PACIENTES Y FLUJO -->
+    <div class="analytics-category">
+        <h2 style="font-size: 1.2rem; color: var(--text-primary); margin-bottom: 15px;">Flujo y Demanda de Pacientes</h2>
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Triage Activo</h3>
+                <span>{{ stats.admisiones_activas }} pacientes en atención</span>
+                <div class="chart-container"><canvas id="triageChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Ingresos por Turno</h3>
+                <span>Distribución horaria</span>
+                <div class="chart-container"><canvas id="turnosChart"></canvas></div>
+            </div>
+            <div class="chart-card" style="grid-column: 1 / -1;">
+                <h3>Admisiones (Últimos 7 días)</h3>
+                <span>Tendencia temporal</span>
+                <div class="chart-container" style="height: 300px;"><canvas id="admisionesChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CATEGORÍA 3: INVENTARIO Y OTROS -->
+    <div class="analytics-category">
+        <h2 style="font-size: 1.2rem; color: var(--text-primary); margin-bottom: 15px;">Logística, Demografía y Facturación</h2>
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Pacientes por Edad</h3>
+                <span>Grupos etarios activos</span>
+                <div class="chart-container"><canvas id="edadesChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Estados de Admisión</h3>
+                <span>Flujo de atención</span>
+                <div class="chart-container"><canvas id="estadoChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Inventario Crítico (Top 8 Menor Stock)</h3>
+                <span>Insumos con niveles más bajos</span>
+                <div class="chart-container"><canvas id="inventarioChart"></canvas></div>
+            </div>
+        </div>
+        
+        <div class="billing-summary" style="margin-top: 0; margin-bottom: 40px;">
+            <span style="font-size: 1rem; color: var(--text-secondary); text-transform: uppercase; font-weight: bold;">Total Facturado Hospitalario (Periodo)</span>
+            <strong style="font-size: 2.5rem;">${{ charts.facturacion_total|floatformat:2 }}</strong>
+            <small>{{ charts.cargos_total }} cargos registrados</small>
+        </div>
+    </div>
+</section>
+
+{{ charts|json_script:"charts-data" }}
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const rawData = document.getElementById('charts-data').textContent;
+        const data = JSON.parse(rawData);
+
+        // Colores base
+        const colors = {
+            disponible: '#10b981', ocupado: '#f43f5e', limpieza: '#8b5cf6', pre_alta: '#f59e0b', mantenimiento: '#64748b',
+            rojo: '#dc2626', naranja: '#ea580c', amarillo: '#eab308', verde: '#16a34a', azul: '#3b82f6',
+            generics: ['#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#6366f1', '#10b981', '#f43f5e']
+        };
+
+        // 1. Recursos por estado (Doughnut)
+        new Chart(document.getElementById('recursosChart'), {
+            type: 'doughnut',
+            data: {
+                labels: data.recursos_por_estado.map(d => d.label),
+                datasets: [{
+                    data: data.recursos_por_estado.map(d => d.count),
+                    backgroundColor: data.recursos_por_estado.map(d => colors[d.key] || colors.generics[0])
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+
+        // 2. Ocupación por Tipo (Bar)
+        new Chart(document.getElementById('ocupacionChart'), {
+            type: 'bar',
+            data: {
+                labels: data.ocupacion_por_tipo.map(d => d.label),
+                datasets: [
+                    { label: 'Ocupados', data: data.ocupacion_por_tipo.map(d => d.ocupados), backgroundColor: colors.ocupado },
+                    { label: 'Disponibles', data: data.ocupacion_por_tipo.map(d => d.disponibles), backgroundColor: colors.disponible }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } } }
+        });
+
+        // 3. Triage Activo (Polar Area)
+        new Chart(document.getElementById('triageChart'), {
+            type: 'polarArea',
+            data: {
+                labels: data.triage_activo.map(d => d.label),
+                datasets: [{
+                    data: data.triage_activo.map(d => d.count),
+                    backgroundColor: data.triage_activo.map(d => {
+                        return (colors[d.key] || '#999') + '99'; // Add alpha
+                    }),
+                    borderColor: data.triage_activo.map(d => colors[d.key] || '#999')
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+
+        // 4. Ingresos por Turno (Pie)
+        new Chart(document.getElementById('turnosChart'), {
+            type: 'pie',
+            data: {
+                labels: data.ingresos_por_turno.map(d => d.label),
+                datasets: [{
+                    data: data.ingresos_por_turno.map(d => d.count),
+                    backgroundColor: ['#fde047', '#fb923c', '#1e3a8a']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        // 5. Admisiones Últimos 7 Días (Line)
+        new Chart(document.getElementById('admisionesChart'), {
+            type: 'line',
+            data: {
+                labels: data.admisiones_ultimos_siete.map(d => d.label),
+                datasets: [{
+                    label: 'Admisiones',
+                    data: data.admisiones_ultimos_siete.map(d => d.count),
+                    borderColor: '#0d9488',
+                    backgroundColor: 'rgba(13, 148, 136, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 4
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        });
+
+        // 6. Pacientes por Edad (Bar Horizontal)
+        new Chart(document.getElementById('edadesChart'), {
+            type: 'bar',
+            data: {
+                labels: data.pacientes_por_edad.map(d => d.label),
+                datasets: [{
+                    label: 'Pacientes',
+                    data: data.pacientes_por_edad.map(d => d.count),
+                    backgroundColor: colors.generics[5]
+                }]
+            },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+
+        // 7. Admisiones por Estado (Doughnut)
+        new Chart(document.getElementById('estadoChart'), {
+            type: 'doughnut',
+            data: {
+                labels: data.admisiones_por_estado.map(d => d.label),
+                datasets: [{
+                    data: data.admisiones_por_estado.map(d => d.count),
+                    backgroundColor: data.admisiones_por_estado.map((d, i) => colors.generics[i % colors.generics.length])
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+
+        // 8. Inventario Crítico (Bar)
+        new Chart(document.getElementById('inventarioChart'), {
+            type: 'bar',
+            data: {
+                labels: data.inventario.map(d => d.nombre.substring(0,15) + '...'),
+                datasets: [{
+                    label: 'Stock Actual',
+                    data: data.inventario.map(d => d.stock),
+                    backgroundColor: data.inventario.map(d => d.critical ? '#ef4444' : '#10b981')
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+    });
+</script>
+{% endblock %}
