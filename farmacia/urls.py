@@ -12,6 +12,8 @@ app_name = 'farmacia'
 
 urlpatterns = [
     path('dashboard/', protect(views.dashboard_farmacia), name='dashboard'),
+    path('terminal/', protect(views.terminal_farmacia), name='terminal'),
+    path('api/receta/<int:receta_id>/', protect(views.api_obtener_receta), name='api_obtener_receta'),
     path('inventario/', protect(views.inventario_farmacia), name='inventario'),
     path('historial/', protect(views.historial_recetas), name='historial'),
     path('despachar/<int:receta_id>/', protect(views.despachar_receta), name='despachar_receta'),

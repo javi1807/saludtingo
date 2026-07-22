@@ -8,6 +8,14 @@ class Medicamento(models.Model):
     concentracion = models.CharField(max_length=50, verbose_name="Concentración")
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(precio_unitario__gte=0),
+                name='medicamento_precio_unitario_positive'
+            )
+        ]
+
     def __str__(self):
         return f"{self.nombre} ({self.principio_activo} - {self.concentracion})"
 
@@ -21,6 +29,18 @@ class InventarioFarmacia(models.Model):
     def stock_disponible(self):
         return self.stock_fisico - self.stock_comprometido
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(stock_fisico__gte=0),
+                name='inventario_stock_fisico_positive'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(stock_comprometido__gte=0),
+                name='inventario_stock_comprometido_positive'
+            )
+        ]
+
     def __str__(self):
         return f"{self.medicamento.nombre} - Físico: {self.stock_fisico} | Disponible: {self.stock_disponible}"
 
@@ -29,6 +49,14 @@ class BotiquinSatelite(models.Model):
     ubicacion = models.CharField(max_length=100, verbose_name="Ubicación (Ej. Carro Paro Box 3)")
     cantidad_fisica = models.IntegerField(default=0, verbose_name="Cantidad Físico en Botiquín")
     
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cantidad_fisica__gte=0),
+                name='botiquin_cantidad_fisica_positive'
+            )
+        ]
+
     def __str__(self):
         return f"{self.ubicacion} - {self.medicamento.nombre}: {self.cantidad_fisica} uds."
 
@@ -47,9 +75,9 @@ class Receta(models.Model):
     ]
 
     admision = models.ForeignKey(Admision, on_delete=models.CASCADE, related_name='recetas')
-    estado = models.CharField(max_length=30, choices=ESTADO_CHOICES, default='PENDIENTE')
+    estado = models.CharField(max_length=30, choices=ESTADO_CHOICES, default='PENDIENTE', db_index=True)
     prioridad = models.CharField(max_length=20, choices=PRIORIDAD_CHOICES, default='RUTINA')
-    fecha_emision = models.DateTimeField(auto_now_add=True)
+    fecha_emision = models.DateTimeField(auto_now_add=True, db_index=True)
     fecha_despacho = models.DateTimeField(null=True, blank=True)
     medico = models.CharField(max_length=100, blank=True, null=True, verbose_name="Médico Prescriptor")
     farmaceutico_despacho = models.CharField(max_length=100, blank=True, null=True, verbose_name="Farmacéutico que Despachó")
@@ -64,5 +92,14 @@ class DetalleReceta(models.Model):
     cantidad = models.PositiveIntegerField()
     indicaciones = models.TextField(blank=True, null=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0),
+                name='detalle_receta_cantidad_positive'
+            )
+        ]
+
     def __str__(self):
         return f"{self.cantidad} x {self.medicamento.nombre} (Receta #{self.receta.id})"
+

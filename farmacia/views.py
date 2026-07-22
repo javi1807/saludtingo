@@ -268,3 +268,68 @@ def reponer_botiquin_api(request):
         return JsonResponse({'success': True, 'message': f'Botiquín reabastecido (+{cantidad} uds).'})
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)})
+
+
+def terminal_farmacia(request):
+    """
+    Renderiza la Terminal POS de Farmacia para despacho web interactivo.
+    """
+    recetas_pendientes = Receta.objects.filter(estado='PENDIENTE').select_related('admision__paciente').order_by('fecha_emision')
+    
+    context = {
+        'active_page': 'terminal',
+        'recetas_pendientes': recetas_pendientes
+    }
+    return render(request, 'farmacia/terminal.html', context)
+
+def api_obtener_receta(request, receta_id):
+    """
+    Devuelve los datos JSON de la receta para poblar la terminal TPS sin recargar la página.
+    """
+    try:
+        receta = Receta.objects.select_related('admision__paciente').get(id=receta_id)
+        
+        if receta.estado != 'PENDIENTE':
+            return JsonResponse({
+                'success': False,
+                'message': f"La receta #{receta.id} no está PENDIENTE. (Estado: {receta.get_estado_display()})."
+            })
+            
+        detalles_qs = receta.detalles.select_related('medicamento__inventario')
+        
+        detalles_list = []
+        for d in detalles_qs:
+            med = d.medicamento
+            inv = med.inventario
+            detalles_list.append({
+                'medicamento_codigo': med.codigo,
+                'medicamento_nombre': med.nombre,
+                'concentracion': med.concentracion,
+                'cantidad_requerida': d.cantidad,
+                'stock_disponible': inv.stock_disponible,
+                'suficiente': inv.stock_disponible >= d.cantidad
+            })
+            
+        data = {
+            'success': True,
+            'receta_id': receta.id,
+            'fecha_emision': receta.fecha_emision.strftime("%H:%M %d/%m"),
+            'prioridad': receta.get_prioridad_display(),
+            'medico': receta.medico,
+            'paciente_nombre': f"{receta.admision.paciente.nombre} {receta.admision.paciente.apellido}",
+            'paciente_dni': receta.admision.paciente.documento_identidad,
+            'detalles': detalles_list
+        }
+        
+        return JsonResponse(data)
+        
+    except Receta.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'message': f"No se encontró ninguna receta con el ID #{receta_id}."
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f"Error interno: {str(e)}"
+        })

@@ -64,7 +64,7 @@ class Admision(models.Model):
     triage_nivel = models.CharField(max_length=20, choices=TRIAGE_CHOICES, default='AMARILLO', verbose_name="Nivel de Triage")
     motivo_consulta = models.TextField(verbose_name="Motivo de Consulta")
     recurso_asignado = models.ForeignKey(Recurso, on_delete=models.SET_NULL, null=True, blank=True, related_name="admisiones_activas", verbose_name="Recurso Asignado")
-    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='EN_ESPERA', verbose_name="Estado de la Admisión")
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='EN_ESPERA', verbose_name="Estado de la Admisión", db_index=True)
 
     # --- Timestamps de flujo clínico ---
     fecha_triage = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Evaluación Triage")
@@ -73,8 +73,34 @@ class Admision(models.Model):
     fecha_alta = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Alta Definitiva")
     notas_alta = models.TextField(blank=True, null=True, verbose_name="Notas de Egreso")
 
+    def clean(self):
+        super().clean()
+        if self.recurso_asignado and self.estado != 'ALTA':
+            # Verificar si el recurso ya tiene una admision activa (que no sea esta misma)
+            activas = Admision.objects.filter(
+                recurso_asignado=self.recurso_asignado
+            ).exclude(estado='ALTA').exclude(pk=self.pk)
+            
+            if activas.exists():
+                raise ValidationError({
+                    'recurso_asignado': f"El recurso {self.recurso_asignado.codigo} ya tiene un paciente activo."
+                })
+
     def __str__(self):
         return f"Admisión #{self.id} - {self.paciente.apellido} ({self.get_estado_display()})"
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['recurso_asignado'],
+                condition=~models.Q(estado='ALTA'),
+                name='unique_active_admission_per_resource'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(fecha_alta__gte=models.F('fecha_ingreso')) | models.Q(fecha_alta__isnull=True),
+                name='admision_fechas_logicas'
+            )
+        ]
 
 
 class Insumo(models.Model):
@@ -83,6 +109,18 @@ class Insumo(models.Model):
     stock = models.IntegerField(verbose_name="Stock Disponible")
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(stock__gte=0),
+                name='insumo_stock_positive'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(precio_unitario__gte=0),
+                name='insumo_precio_unitario_positive'
+            )
+        ]
+
     def __str__(self):
         return f"{self.nombre} ({self.codigo}) - Stock: {self.stock}"
 
@@ -90,6 +128,14 @@ class Insumo(models.Model):
 class CuentaFacturacion(models.Model):
     admision = models.OneToOneField(Admision, on_delete=models.CASCADE, related_name="cuenta_facturacion", verbose_name="Admisión")
     total_cargado = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, verbose_name="Total Cargado")
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(total_cargado__gte=0),
+                name='cuenta_total_cargado_positive'
+            )
+        ]
 
     def __str__(self):
         return f"Cuenta de Admisión #{self.admision.id} - Total: ${self.total_cargado}"
@@ -109,6 +155,18 @@ class CargoFacturacion(models.Model):
     cantidad = models.IntegerField(verbose_name="Cantidad")
     precio_aplicado = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Aplicado")
     fecha_cargo = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Cargo")
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0),
+                name='cargo_cantidad_positive'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(precio_aplicado__gte=0),
+                name='cargo_precio_aplicado_positive'
+            )
+        ]
 
     def __str__(self):
         item = self.insumo.nombre if self.insumo else (self.medicamento.nombre if self.medicamento else 'N/A')
