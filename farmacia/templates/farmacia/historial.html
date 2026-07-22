@@ -1,0 +1,83 @@
+{% extends 'farmacia/base_farmacia.html' %}
+
+{% block title %}Historial y Auditoría{% endblock %}
+
+{% block section_title %}Historial de Dispensación{% endblock %}
+
+{% block content %}
+<div class="glass-panel">
+    <h2 class="panel-title">📚 Recetas Procesadas</h2>
+    
+    {% if not recetas %}
+        <p style="color: var(--text-secondary); text-align: center; padding: 20px;">No hay historial de recetas aún.</p>
+    {% else %}
+        <div class="table-responsive">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th>ID Receta</th>
+                        <th>Prioridad</th>
+                        <th>Estado</th>
+                        <th>Fecha Emisión</th>
+                        <th>Fecha Despacho</th>
+                        <th>Farmacéutico</th>
+                        <th>Detalles</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for receta in recetas %}
+                    <tr>
+                        <td><strong>#{{ receta.id }}</strong></td>
+                        <td>
+                            {% if receta.prioridad == 'EMERGENCIA' %}
+                                <span style="color: #b91c1c; font-weight: bold;">STAT</span>
+                            {% elif receta.prioridad == 'URGENTE' %}
+                                <span style="color: #b45309; font-weight: bold;">Urgente</span>
+                            {% else %}
+                                Rutina
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if receta.estado == 'DESPACHADA' %}
+                                <span style="color: var(--color-disponible); font-weight: bold;">Despachada</span>
+                            {% else %}
+                                <span style="color: var(--text-secondary); font-weight: bold;">{{ receta.get_estado_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ receta.fecha_emision|date:"H:i d/m/y" }}</td>
+                        <td>{{ receta.fecha_despacho|date:"H:i d/m/y"|default:"-" }}</td>
+                        <td>{{ receta.farmaceutico_despacho|default:"-" }}</td>
+                        <td>
+                            <ul style="margin: 0; padding-left: 1rem; font-size: 0.85rem;">
+                            {% for detalle in receta.detalles.all %}
+                                <li>{{ detalle.cantidad }}x {{ detalle.medicamento.nombre }}</li>
+                            {% endfor %}
+                            </ul>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Paginación -->
+        <div class="pagination" style="margin-top: 20px; display: flex; justify-content: center; gap: 10px; align-items: center;">
+            <span class="step-links">
+                {% if recetas.has_previous %}
+                    <a href="?page=1" class="btn btn-sm" style="border: 1px solid var(--border-color); background: transparent; color: var(--text-main);">&laquo; primera</a>
+                    <a href="?page={{ recetas.previous_page_number }}" class="btn btn-sm" style="border: 1px solid var(--border-color); background: transparent; color: var(--text-main);">anterior</a>
+                {% endif %}
+
+                <span class="current" style="padding: 5px 15px; font-weight: 600; color: var(--text-main);">
+                    Página {{ recetas.number }} de {{ recetas.paginator.num_pages }}.
+                </span>
+
+                {% if recetas.has_next %}
+                    <a href="?page={{ recetas.next_page_number }}" class="btn btn-sm" style="border: 1px solid var(--border-color); background: transparent; color: var(--text-main);">siguiente</a>
+                    <a href="?page={{ recetas.paginator.num_pages }}" class="btn btn-sm" style="border: 1px solid var(--border-color); background: transparent; color: var(--text-main);">última &raquo;</a>
+                {% endif %}
+            </span>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

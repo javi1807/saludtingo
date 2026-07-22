@@ -1,0 +1,24 @@
+# Python/Django
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Database
+db.sqlite3
+db.sqlite3-shm
+db.sqlite3-wal
+
+# IDE
+.vscode/
+
+# Temporary and Seed Scripts
+seed_*.py
+fix_encoding.py
+refill_stock.py

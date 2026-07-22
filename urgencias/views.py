@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 from datetime import date, timedelta
 from django.shortcuts import render
@@ -10,8 +11,10 @@ from django.utils import timezone
 
 from .models import Paciente, Recurso, Admision, Insumo, CuentaFacturacion, CargoFacturacion
 from .decorators import retry_on_db_lock
+from farmacia.models import Medicamento, Receta, DetalleReceta, InventarioFarmacia, BotiquinSatelite
 
-# --- VIEWS DE NAVEGACIÃ“N ---def dashboard(request):
+# --- VIEWS DE NAVEGACIÓN ---
+def dashboard(request):
     """Renderiza el monitor de camas principal (Overview)."""
     active_admisiones_prefetch = Prefetch(
         'admisiones_activas',
@@ -71,12 +74,14 @@ def consola_medica(request):
     
     pacientes = Paciente.objects.all().order_by('-id')[:20]
     insumos = Insumo.objects.all().order_by('codigo')
+    medicamentos = Medicamento.objects.all().order_by('nombre')
 
     context = {
         'recursos': recursos,
         'admisiones': admisiones_activas,
         'pacientes': pacientes,
         'insumos': insumos,
+        'medicamentos': medicamentos,
         'active_page': 'consola_medica',
     }
     return render(request, 'urgencias/consola_medica.html', context)
@@ -341,7 +346,12 @@ def build_dashboard_charts(recursos, admisiones_activas, insumos):
 
     ultima_semana = [(date.today() - timedelta(days=i)) for i in range(6, -1, -1)]
     admisiones_por_dia = {dia: 0 for dia in ultima_semana}
-    for adm in admisiones_list:
+    
+    # Obtener todas las admisiones (incluyendo las dadas de alta) para los últimos 7 días
+    fecha_limite = timezone.now() - timedelta(days=7)
+    admisiones_recientes = Admision.objects.filter(fecha_ingreso__gte=fecha_limite)
+    
+    for adm in admisiones_recientes:
         if adm.fecha_ingreso:
             fecha = adm.fecha_ingreso.date()
             if fecha in admisiones_por_dia:
@@ -357,17 +367,6 @@ def build_dashboard_charts(recursos, admisiones_activas, insumos):
         for dia in ultima_semana
     ]
 
-    max_stock = max([ins.stock for ins in insumos_list], default=0)
-    inventario = []
-    for ins in sorted(insumos_list, key=lambda item: item.stock)[:8]:
-        inventario.append({
-            'codigo': ins.codigo,
-            'nombre': ins.nombre,
-            'stock': ins.stock,
-            'percent': percent(ins.stock, max_stock),
-            'critical': ins.stock <= 10,
-        })
-
     facturacion_total = CuentaFacturacion.objects.aggregate(total=Sum('total_cargado'))['total'] or Decimal('0.00')
     cargos_total = CargoFacturacion.objects.aggregate(total=Sum('cantidad'))['total'] or 0
 
@@ -379,7 +378,6 @@ def build_dashboard_charts(recursos, admisiones_activas, insumos):
         'pacientes_por_edad': pacientes_por_edad,
         'ingresos_por_turno': ingresos_por_turno,
         'admisiones_ultimos_siete': admisiones_ultimos_siete,
-        'inventario': inventario,
         'facturacion_total': facturacion_total,
         'cargos_total': cargos_total,
         'estado_labels': estado_labels,
@@ -395,8 +393,8 @@ def build_dashboard_charts(recursos, admisiones_activas, insumos):
 @retry_on_db_lock()
 def registrar_paciente_api(request):
     """
-    Registra o actualiza un paciente y crea una admisiÃ³n de forma segura.
-    Evita colisiones si hay solicitudes simultÃ¡neas del mismo paciente.
+    Registra o actualiza un paciente y crea una admisión de forma segura.
+    Evita colisiones si hay solicitudes simultáneas del mismo paciente.
     """
     documento = request.POST.get('documento_identidad', '').strip()
     nombre = request.POST.get('nombre', '').strip()
@@ -409,11 +407,11 @@ def registrar_paciente_api(request):
         return JsonResponse({'success': False, 'message': 'Todos los campos son obligatorios'}, status=400)
 
     try:
-        # Iniciamos bloque atÃ³mico
+        # Iniciamos bloque atómico
         with transaction.atomic():
             # Intentamos crear o actualizar el paciente usando select_for_update para evitar colisiones concurrentes
-            # En SQLite, select_for_update bloquea la tabla completa si no hay Ã­ndices precisos, pero el DNI estÃ¡ indexado.
-            # Capturamos excepciones de clave Ãºnica por si dos hilos intentan hacer INSERT a la vez.
+            # En SQLite, select_for_update bloquea la tabla completa si no hay índices precisos, pero el DNI está indexado.
+            # Capturamos excepciones de clave única por si dos hilos intentan hacer INSERT a la vez.
             try:
                 # Intento de obtener el registro bloqueado
                 paciente = Paciente.objects.select_for_update().get(documento_identidad=documento)
@@ -435,7 +433,7 @@ def registrar_paciente_api(request):
                     paciente.save()
                     created = True
                 except IntegrityError:
-                    # En caso de colisiÃ³n de clave Ãºnica (otra solicitud lo insertÃ³ entre el get y el save),
+                    # En caso de colisión de clave única (otra solicitud lo insertó entre el get y el save),
                     # volvemos a obtener el registro bloqueado
                     paciente = Paciente.objects.select_for_update().get(documento_identidad=documento)
                     paciente.nombre = nombre
@@ -444,10 +442,10 @@ def registrar_paciente_api(request):
                     paciente.save()
                     created = False
 
-            # Validar que no tenga ya una admisiÃ³n activa en curso
+            # Validar que no tenga ya una admisión activa en curso
             admision_activa = Admision.objects.filter(paciente=paciente).exclude(estado='ALTA').first()
             if admision_activa:
-                raise ValidationError(f"El paciente ya cuenta con una admisiÃ³n activa (ID #{admision_activa.id})")
+                raise ValidationError(f"El paciente ya cuenta con una admisión activa (ID #{admision_activa.id})")
 
             # Crear admisión — registrar timestamp de ingreso/triage
             admision = Admision.objects.create(
@@ -458,13 +456,13 @@ def registrar_paciente_api(request):
                 fecha_triage=timezone.now()
             )
 
-            # Crear cuenta de facturaciÃ³n inicial vacÃ­a
+            # Crear cuenta de facturación inicial vacía
             CuentaFacturacion.objects.create(admision=admision)
 
         accion = "creado" if created else "actualizado"
         return JsonResponse({
             'success': True,
-            'message': f"Paciente {accion} e ingresado a triage exitosamente. AdmisiÃ³n #{admision.id}",
+            'message': f"Paciente {accion} e ingresado a triage exitosamente. Admisión #{admision.id}",
             'data': {
                 'admision_id': admision.id,
                 'paciente_id': paciente.id,
@@ -481,14 +479,14 @@ def registrar_paciente_api(request):
 @retry_on_db_lock()
 def asignar_recurso_api(request):
     """
-    Asigna una cama o box de atenciÃ³n a una admisiÃ³n activa.
-    Usa control de concurrencia estricto (Pessimistic Locking) para evitar doble asignaciÃ³n.
+    Asigna una cama o box de atención a una admisión activa.
+    Usa control de concurrencia estricto (Pessimistic Locking) para evitar doble asignación.
     """
     admision_id = request.POST.get('admision_id')
     recurso_id = request.POST.get('recurso_id')
 
     if not (admision_id and recurso_id):
-        return JsonResponse({'success': False, 'message': 'Faltan parÃ¡metros de admisiÃ³n o recurso'}, status=400)
+        return JsonResponse({'success': False, 'message': 'Faltan parámetros de admisión o recurso'}, status=400)
 
     try:
         with transaction.atomic():
@@ -496,14 +494,14 @@ def asignar_recurso_api(request):
             recurso = Recurso.objects.select_for_update().get(id=recurso_id)
             
             if recurso.estado != 'DISPONIBLE':
-                raise ValidationError(f"El recurso {recurso.codigo} no estÃ¡ disponible (Estado actual: {recurso.get_estado_display()})")
+                raise ValidationError(f"El recurso {recurso.codigo} no está disponible (Estado actual: {recurso.get_estado_display()})")
 
-            # 2. Bloquear y obtener la admisiÃ³n
+            # 2. Bloquear y obtener la admisión
             admision = Admision.objects.select_for_update().get(id=admision_id)
             if admision.estado == 'ALTA':
-                raise ValidationError("No se puede asignar un recurso a una admisiÃ³n que ya fue dada de alta")
+                raise ValidationError("No se puede asignar un recurso a una admisión que ya fue dada de alta")
 
-            # 3. Si la admisiÃ³n ya tenÃ­a un recurso asignado, liberarlo
+            # 3. Si la admisión ya tenía un recurso asignado, liberarlo
             if admision.recurso_asignado:
                 recurso_viejo = Recurso.objects.select_for_update().get(id=admision.recurso_asignado.id)
                 recurso_viejo.estado = 'DISPONIBLE'
@@ -520,12 +518,12 @@ def asignar_recurso_api(request):
 
         return JsonResponse({
             'success': True,
-            'message': f"Recurso {recurso.codigo} asignado con Ã©xito a la AdmisiÃ³n #{admision.id}."
+            'message': f"Recurso {recurso.codigo} asignado con éxito a la Admisión #{admision.id}."
         })
     except Recurso.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Recurso no encontrado'}, status=404)
     except Admision.DoesNotExist:
-        return JsonResponse({'success': False, 'message': 'AdmisiÃ³n no encontrada'}, status=404)
+        return JsonResponse({'success': False, 'message': 'Admisión no encontrada'}, status=404)
     except ValidationError as e:
         return JsonResponse({'success': False, 'message': str(e.message if hasattr(e, 'message') else e)}, status=400)
     except Exception as e:
@@ -536,26 +534,26 @@ def asignar_recurso_api(request):
 @retry_on_db_lock()
 def aplicar_cargos_api(request):
     """
-    Registra la aplicaciÃ³n de un insumo mÃ©dico, descontando el inventario
-    y aÃ±adiendo el costo a la cuenta del paciente de manera atÃ³mica (ACID).
+    Registra la aplicación de un insumo médico, descontando el inventario
+    y añadiendo el costo a la cuenta del paciente de manera atómica (ACID).
     """
     admision_id = request.POST.get('admision_id')
     insumo_id = request.POST.get('insumo_id')
     cantidad_str = request.POST.get('cantidad', '1')
 
     if not (admision_id and insumo_id):
-        return JsonResponse({'success': False, 'message': 'Faltan parÃ¡metros indispensables'}, status=400)
+        return JsonResponse({'success': False, 'message': 'Faltan parámetros indispensables'}, status=400)
 
     try:
         cantidad = int(cantidad_str)
         if cantidad <= 0:
             raise ValidationError("La cantidad debe ser mayor a cero")
     except ValueError:
-        return JsonResponse({'success': False, 'message': 'Cantidad invÃ¡lida'}, status=400)
+        return JsonResponse({'success': False, 'message': 'Cantidad inválida'}, status=400)
 
     try:
         with transaction.atomic():
-            # 1. Obtener y bloquear la cuenta de facturaciÃ³n
+            # 1. Obtener y bloquear la cuenta de facturación
             cuenta = CuentaFacturacion.objects.select_for_update().get(admision_id=admision_id)
 
             # 2. Obtener y bloquear el insumo del inventario
@@ -571,7 +569,7 @@ def aplicar_cargos_api(request):
             insumo.stock -= cantidad
             insumo.save()
 
-            # 5. Crear el cargo de facturaciÃ³n
+            # 5. Crear el cargo de facturación
             CargoFacturacion.objects.create(
                 cuenta=cuenta,
                 insumo=insumo,
@@ -587,7 +585,7 @@ def aplicar_cargos_api(request):
             'message': f"Se cargaron {cantidad} unidad(es) de {insumo.nombre} a la cuenta del paciente. Stock restante: {insumo.stock}."
         })
     except CuentaFacturacion.DoesNotExist:
-        return JsonResponse({'success': False, 'message': 'No existe una cuenta de facturaciÃ³n activa para esta admisiÃ³n'}, status=404)
+        return JsonResponse({'success': False, 'message': 'No existe una cuenta de facturación activa para esta admisión'}, status=404)
     except Insumo.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Insumo no encontrado'}, status=404)
     except ValidationError as e:
@@ -600,12 +598,12 @@ def aplicar_cargos_api(request):
 @retry_on_db_lock()
 def liberar_recurso_api(request):
     """
-    Libera un recurso asignado (alta mÃ©dica) de manera atÃ³mica.
+    Libera un recurso asignado (alta médica) de manera atómica.
     """
     admision_id = request.POST.get('admision_id')
 
     if not admision_id:
-        return JsonResponse({'success': False, 'message': 'ID de admisiÃ³n requerido'}, status=400)
+        return JsonResponse({'success': False, 'message': 'ID de admisión requerido'}, status=400)
 
     try:
         with transaction.atomic():
@@ -625,17 +623,17 @@ def liberar_recurso_api(request):
 
         return JsonResponse({
             'success': True,
-            'message': f"Alta mÃ©dica procesada. AdmisiÃ³n #{admision.id} cerrada y recurso liberado."
+            'message': f"Alta médica procesada. Admisión #{admision.id} cerrada y recurso liberado."
         })
     except Admision.DoesNotExist:
-        return JsonResponse({'success': False, 'message': 'AdmisiÃ³n no encontrada'}, status=404)
+        return JsonResponse({'success': False, 'message': 'Admisión no encontrada'}, status=404)
     except Exception as e:
         return JsonResponse({'success': False, 'message': f"Error al dar de alta: {str(e)}"}, status=500)
 
 
 def registrar_shock_trauma_api(request):
     """
-    Bypass Shock Trauma: Registra un paciente NN y le asigna una cama crÃ­tica disponible de manera inmediata y atÃ³mica.
+    Bypass Shock Trauma: Registra un paciente NN y le asigna una cama crítica disponible de manera inmediata y atómica.
     """
     import uuid
     nn_id = f"NN-{uuid.uuid4().hex[:8].upper()}"
@@ -650,28 +648,28 @@ def registrar_shock_trauma_api(request):
                 fecha_nacimiento="2000-01-01"
             )
             
-            # 2. Buscar y bloquear una cama crÃ­tica (preferencia CAMA de tipo CAMA)
+            # 2. Buscar y bloquear una cama crítica (preferencia CAMA de tipo CAMA)
             recurso = Recurso.objects.select_for_update().filter(tipo='CAMA', estado='DISPONIBLE').first()
             if not recurso:
                 # Si no hay camas, buscar cualquier box disponible
                 recurso = Recurso.objects.select_for_update().filter(tipo='BOX', estado='DISPONIBLE').first()
                 
             if not recurso:
-                raise ValidationError("No hay recursos crÃ­ticos disponibles (camas/boxes) en este momento.")
+                raise ValidationError("No hay recursos críticos disponibles (camas/boxes) en este momento.")
                 
             recurso.estado = 'OCUPADO'
             recurso.save()
             
-            # 3. Crear admisiÃ³n directa en estado ADMITIDO y triage ROJO
+            # 3. Crear admisión directa en estado ADMITIDO y triage ROJO
             admision = Admision.objects.create(
                 paciente=paciente,
-                motivo_consulta="INGRESO CRÃTICO - SHOCK TRAUMA BYPASS",
+                motivo_consulta="INGRESO CRÍTICO - SHOCK TRAUMA BYPASS",
                 triage_nivel='ROJO',
                 recurso_asignado=recurso,
                 estado='ADMITIDO'
             )
             
-            # 4. Crear cuenta de facturaciÃ³n
+            # 4. Crear cuenta de facturación
             CuentaFacturacion.objects.create(admision=admision)
             
         return JsonResponse({
@@ -688,17 +686,17 @@ def registrar_shock_trauma_api(request):
 @retry_on_db_lock()
 def ordenar_pre_alta_api(request):
     """
-    El mÃ©dico de guardia da la orden de pre-alta. El recurso queda reservado (PRE_ALTA) pero no libre.
+    El médico de guardia da la orden de pre-alta. El recurso queda reservado (PRE_ALTA) pero no libre.
     """
     admision_id = request.POST.get('admision_id')
     if not admision_id:
-        return JsonResponse({'success': False, 'message': 'ID de admisiÃ³n requerido'}, status=400)
+        return JsonResponse({'success': False, 'message': 'ID de admisión requerido'}, status=400)
         
     try:
         with transaction.atomic():
             admision = Admision.objects.select_for_update().get(id=admision_id)
             if not admision.recurso_asignado:
-                raise ValidationError("La admisiÃ³n no cuenta con un recurso asignado.")
+                raise ValidationError("La admisión no cuenta con un recurso asignado.")
                 
             recurso = Recurso.objects.select_for_update().get(id=admision.recurso_asignado.id)
             recurso.estado = 'PRE_ALTA'
@@ -710,10 +708,10 @@ def ordenar_pre_alta_api(request):
             
         return JsonResponse({
             'success': True,
-            'message': f"Orden de pre-alta registrada. El recurso {recurso.codigo} se encuentra reservado en preparaciÃ³n de salida."
+            'message': f"Orden de pre-alta registrada. El recurso {recurso.codigo} se encuentra reservado en preparación de salida."
         })
     except Admision.DoesNotExist:
-        return JsonResponse({'success': False, 'message': 'AdmisiÃ³n no encontrada'}, status=404)
+        return JsonResponse({'success': False, 'message': 'Admisión no encontrada'}, status=404)
     except ValidationError as e:
         return JsonResponse({'success': False, 'message': str(e.message if hasattr(e, 'message') else e)}, status=400)
     except Exception as e:
@@ -724,12 +722,12 @@ def ordenar_pre_alta_api(request):
 @retry_on_db_lock()
 def confirmar_salida_api(request):
     """
-    El personal de admisiÃ³n o enfermerÃ­a confirma que el paciente abandonÃ³ fÃ­sicamente la cama.
+    El personal de admisión o enfermería confirma que el paciente abandonó físicamente la cama.
     El paciente es dado de alta (estado ALTA) y la cama pasa a estado LIMPIEZA.
     """
     admision_id = request.POST.get('admision_id')
     if not admision_id:
-        return JsonResponse({'success': False, 'message': 'ID de admisiÃ³n requerido'}, status=400)
+        return JsonResponse({'success': False, 'message': 'ID de admisión requerido'}, status=400)
         
     try:
         with transaction.atomic():
@@ -750,10 +748,10 @@ def confirmar_salida_api(request):
             
         return JsonResponse({
             'success': True,
-            'message': f"Salida fÃ­sica confirmada. Paciente dado de alta. Cama {recurso.codigo if recurso_asignado else ''} enviada a desinfecciÃ³n."
+            'message': f"Salida física confirmada. Paciente dado de alta. Cama {recurso.codigo if recurso_asignado else ''} enviada a desinfección."
         })
     except Admision.DoesNotExist:
-        return JsonResponse({'success': False, 'message': 'AdmisiÃ³n no encontrada'}, status=404)
+        return JsonResponse({'success': False, 'message': 'Admisión no encontrada'}, status=404)
     except Exception as e:
         return JsonResponse({'success': False, 'message': f"Error transaccional: {str(e)}"}, status=500)
 
@@ -780,7 +778,7 @@ def registrar_limpieza_api(request):
             
         return JsonResponse({
             'success': True,
-            'message': f"Limpieza y desinfecciÃ³n de {recurso.codigo} completada. El recurso estÃ¡ disponible nuevamente."
+            'message': f"Limpieza y desinfección de {recurso.codigo} completada. El recurso está disponible nuevamente."
         })
     except Recurso.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Recurso no encontrado'}, status=404)
@@ -794,10 +792,10 @@ def registrar_limpieza_api(request):
 @retry_on_db_lock()
 def regularizar_paciente_nn_api(request):
     """
-    Regularizar Paciente NN: Toma una admisiÃ³n de paciente NN y actualiza
+    Regularizar Paciente NN: Toma una admisión de paciente NN y actualiza
     los datos con su documento real (DNI), nombre, apellido y fecha de nacimiento.
-    Si el DNI ya existe en la base de datos, asocia la admisiÃ³n al paciente existente y
-    borra el NN temporal de forma atÃ³mica para evitar duplicados.
+    Si el DNI ya existe en la base de datos, asocia la admisión al paciente existente y
+    borra el NN temporal de forma atómica para evitar duplicados.
     """
     admision_id = request.POST.get('admision_id')
     nuevo_dni = request.POST.get('documento_identidad', '').strip()
@@ -810,38 +808,38 @@ def regularizar_paciente_nn_api(request):
 
     try:
         with transaction.atomic():
-            # 1. Obtener y bloquear la admisiÃ³n
+            # 1. Obtener y bloquear la admisión
             admision = Admision.objects.select_for_update().get(id=admision_id)
             paciente_nn = Paciente.objects.select_for_update().get(id=admision.paciente.id)
 
             # 2. Validar que realmente sea un paciente NN
             if not paciente_nn.documento_identidad.startswith("NN-"):
-                raise ValidationError("Esta admisiÃ³n ya estÃ¡ asociada a un paciente regularizado.")
+                raise ValidationError("Esta admisión ya está asociada a un paciente regularizado.")
 
             # 3. Comprobar si el DNI de destino ya existe
             try:
-                # Caso B: El DNI ya estÃ¡ registrado en el sistema
+                # Caso B: El DNI ya está registrado en el sistema
                 paciente_existente = Paciente.objects.select_for_update().get(documento_identidad=nuevo_dni)
                 
-                # Actualizar datos demogrÃ¡ficos del paciente existente
+                # Actualizar datos demográficos del paciente existente
                 paciente_existente.nombre = nuevo_nombre
                 paciente_existente.apellido = nuevo_apellido
                 paciente_existente.fecha_nacimiento = nueva_fecha_nacimiento
                 paciente_existente.save()
 
-                # Verificar si el paciente existente ya tiene admisiones activas (para evitar colisiÃ³n de admisiÃ³n doble)
+                # Verificar si el paciente existente ya tiene admisiones activas (para evitar colisión de admisión doble)
                 admision_activa = Admision.objects.filter(paciente=paciente_existente).exclude(estado='ALTA').exclude(id=admision.id).first()
                 if admision_activa:
-                    raise ValidationError(f"El paciente {nuevo_dni} ya tiene una admisiÃ³n activa (ID #{admision_activa.id})")
+                    raise ValidationError(f"El paciente {nuevo_dni} ya tiene una admisión activa (ID #{admision_activa.id})")
 
-                # Asignar la admisiÃ³n al paciente existente
+                # Asignar la admisión al paciente existente
                 admision.paciente = paciente_existente
                 admision.save()
 
                 # Eliminar el paciente NN temporal sobrante
                 paciente_nn.delete()
                 
-                message = f"AdmisiÃ³n regularizada. DNI {nuevo_dni} existente detectado; se asociÃ³ el historial y se eliminÃ³ el registro NN temporal."
+                message = f"Admisión regularizada. DNI {nuevo_dni} existente detectado; se asoció el historial y se eliminó el registro NN temporal."
             except Paciente.DoesNotExist:
                 # Caso A: El DNI es nuevo
                 # Modificar el registro NN directamente
@@ -852,11 +850,11 @@ def regularizar_paciente_nn_api(request):
                 paciente_nn.historia_clinica_num = f"HC-{nuevo_dni}"
                 paciente_nn.save()
                 
-                message = f"Paciente NN regularizado exitosamente con DNI {nuevo_dni} y nÃºmero de historia clÃ­nica generado."
+                message = f"Paciente NN regularizado exitosamente con DNI {nuevo_dni} y número de historia clínica generado."
 
         return JsonResponse({'success': True, 'message': message})
     except Admision.DoesNotExist:
-        return JsonResponse({'success': False, 'message': 'AdmisiÃ³n no encontrada'}, status=404)
+        return JsonResponse({'success': False, 'message': 'Admisión no encontrada'}, status=404)
     except Paciente.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Paciente asociado no encontrado'}, status=404)
     except ValidationError as e:
@@ -864,3 +862,174 @@ def regularizar_paciente_nn_api(request):
     except Exception as e:
         return JsonResponse({'success': False, 'message': f"Error al regularizar: {str(e)}"}, status=500)
 
+@require_POST
+@retry_on_db_lock()
+def generar_receta_api(request):
+    """
+    Genera una receta médica desde urgencias hacia farmacia.
+    No verifica stock, simplemente emite la orden.
+    """
+    admision_id = request.POST.get('admision_id')
+    medicamentos_json = request.POST.get('medicamentos') # ej: '[{"id": 1, "cantidad": 2}, ...]'
+    prioridad = request.POST.get('prioridad', 'RUTINA')
+    
+    if not (admision_id and medicamentos_json):
+        return JsonResponse({'success': False, 'message': 'Faltan parámetros indispensables'}, status=400)
+        
+    try:
+        medicamentos_data = json.loads(medicamentos_json)
+        if not medicamentos_data:
+            raise ValidationError("La receta no puede estar vacía.")
+            
+        with transaction.atomic():
+            admision = Admision.objects.select_for_update().get(id=admision_id)
+            
+            # Crear la receta
+            receta = Receta.objects.create(
+                admision=admision,
+                medico=request.user.username if request.user.is_authenticated else 'Médico Urgencias',
+                prioridad=prioridad,
+                estado='PENDIENTE'
+            )
+            
+            for item in medicamentos_data:
+                med_id = item.get('id')
+                cantidad = int(item.get('cantidad', 0))
+                
+                if cantidad <= 0:
+                    raise ValidationError("La cantidad debe ser mayor a cero.")
+                    
+                # Pessimistic Lock on Inventory
+                try:
+                    inventario = InventarioFarmacia.objects.select_for_update().get(medicamento_id=med_id)
+                except InventarioFarmacia.DoesNotExist:
+                    raise ValidationError(f"No hay registro de inventario para el medicamento ID {med_id}.")
+                
+                if inventario.stock_disponible < cantidad:
+                    raise ValidationError(f"Stock insuficiente para {inventario.medicamento.nombre}. Físico: {inventario.stock_fisico}, Comprometido: {inventario.stock_comprometido}.")
+                
+                # Commit the stock allocation (Flujo 1)
+                inventario.stock_comprometido += cantidad
+                inventario.save()
+                    
+                medicamento = inventario.medicamento
+                DetalleReceta.objects.create(
+                    receta=receta,
+                    medicamento=medicamento,
+                    cantidad=cantidad
+                )
+                
+        return JsonResponse({
+            'success': True,
+            'message': f"Receta #{receta.id} generada y enviada a farmacia exitosamente."
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Formato de medicamentos inválido'}, status=400)
+    except Admision.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Admisión no encontrada'}, status=404)
+    except Medicamento.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Uno o más medicamentos no existen'}, status=404)
+    except ValidationError as e:
+        return JsonResponse({'success': False, 'message': str(e.message if hasattr(e, 'message') else e)}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f"Error al generar receta: {str(e)}"}, status=500)
+
+@require_POST
+@retry_on_db_lock()
+def administrar_botiquin_api(request):
+    """
+    Flujo 2: El 'Carro de Paro' (Dispensación Retroactiva).
+    Enfermería ya administró el medicamento. Esto regulariza el stock local y notifica a Farmacia.
+    """
+    admision_id = request.POST.get('admision_id')
+    medicamento_id = request.POST.get('medicamento_id')
+    cantidad = int(request.POST.get('cantidad', 1))
+    ubicacion = request.POST.get('ubicacion', 'Carro de Paro Urgencias')
+
+    if not (admision_id and medicamento_id):
+        return JsonResponse({'success': False, 'message': 'Faltan parámetros indispensables'}, status=400)
+
+    try:
+        with transaction.atomic():
+            admision = Admision.objects.select_for_update().get(id=admision_id)
+            medicamento = Medicamento.objects.get(id=medicamento_id)
+
+            # Restar del Botiquín Satélite (o crearlo en negativo si no hay registro para que Farmacia sepa cuánto reponer)
+            botiquin, _ = BotiquinSatelite.objects.select_for_update().get_or_create(
+                medicamento=medicamento,
+                ubicacion=ubicacion,
+                defaults={'cantidad_fisica': 0}
+            )
+            botiquin.cantidad_fisica -= cantidad
+            botiquin.save()
+
+            # Registrar la receta retroactiva
+            receta = Receta.objects.create(
+                admision=admision,
+                medico=request.user.username if request.user.is_authenticated else 'Enfermería',
+                prioridad='EMERGENCIA',
+                estado='ADMINISTRADO_BOTIQUIN',
+                fecha_despacho=timezone.now()
+            )
+
+            DetalleReceta.objects.create(
+                receta=receta,
+                medicamento=medicamento,
+                cantidad=cantidad,
+                indicaciones=f"Uso de emergencia desde {ubicacion}"
+            )
+
+            # Generar el cargo directo a facturación
+            cuenta = admision.cuenta_facturacion
+            CargoFacturacion.objects.create(
+                cuenta=cuenta,
+                medicamento=medicamento,
+                cantidad=cantidad,
+                precio_aplicado=medicamento.precio_unitario
+            )
+            cuenta.recalcular_total()
+
+        return JsonResponse({
+            'success': True,
+            'message': f"Administración de {medicamento.nombre} desde {ubicacion} registrada exitosamente."
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f"Error al registrar botiquín: {str(e)}"}, status=500)
+
+
+@require_POST
+def trasladar_paciente_api(request):
+    """API para trasladar a un paciente a un nuevo recurso (cama/box)."""
+    admision_id = request.POST.get('admision_id')
+    nuevo_recurso_id = request.POST.get('recurso_id')
+    
+    if not admision_id or not nuevo_recurso_id:
+        return JsonResponse({'success': False, 'message': 'Datos incompletos'})
+        
+    try:
+        with transaction.atomic():
+            adm = Admision.objects.select_for_update().get(id=admision_id)
+            nuevo_recurso = Recurso.objects.select_for_update().get(id=nuevo_recurso_id)
+            recurso_anterior = adm.recurso_asignado
+            
+            if nuevo_recurso.estado != 'DISPONIBLE':
+                return JsonResponse({'success': False, 'message': 'El nuevo recurso no está disponible'})
+                
+            if recurso_anterior:
+                recurso_anterior.estado = 'LIMPIEZA'
+                recurso_anterior.save()
+                
+            nuevo_recurso.estado = 'OCUPADO'
+            nuevo_recurso.save()
+            
+            adm.recurso_asignado = nuevo_recurso
+            # Si estaba en espera o triage, actualizar a ADMITIDO
+            if adm.estado in ['EN_ESPERA', 'EN_TRIAJE']:
+                adm.estado = 'ADMITIDO'
+                if not adm.fecha_admision_cama:
+                    adm.fecha_admision_cama = timezone.now()
+            adm.save()
+            
+        return JsonResponse({'success': True, 'message': f'Paciente trasladado a {nuevo_recurso.codigo}'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})

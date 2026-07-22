@@ -126,6 +126,7 @@
                                     {% if adm.estado != 'ALTA' %}
                                         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
                                             <button class="btn btn-primary btn-sm btn-full" onclick="ordenarPreAlta('{{ adm.id }}')">Emitir Pre-Alta</button>
+                                            <button class="btn btn-warning btn-sm btn-full" onclick="openTrasladarModal('{{ adm.id }}', '{{ adm.paciente.nombre|escapejs }} {{ adm.paciente.apellido|escapejs }}')">Trasladar</button>
                                             <button class="btn btn-danger btn-sm btn-full" onclick="liberarRecurso('{{ adm.id }}')">Alta Directa</button>
                                         </div>
                                     {% endif %}

@@ -93,9 +93,9 @@
         </div>
     </div>
 
-    <!-- CATEGORÍA 3: INVENTARIO Y OTROS -->
+    <!-- CATEGORÍA 3: INVENTARIO Y DEMOGRAFÍA -->
     <div class="analytics-category">
-        <h2 style="font-size: 1.2rem; color: var(--text-primary); margin-bottom: 15px;">Logística, Demografía y Facturación</h2>
+        <h2 style="font-size: 1.2rem; color: var(--text-primary); margin-bottom: 15px;">Demografía y Flujo Operativo</h2>
         <div class="charts-grid">
             <div class="chart-card">
                 <h3>Pacientes por Edad</h3>
@@ -107,17 +107,6 @@
                 <span>Flujo de atención</span>
                 <div class="chart-container"><canvas id="estadoChart"></canvas></div>
             </div>
-            <div class="chart-card">
-                <h3>Inventario Crítico (Top 8 Menor Stock)</h3>
-                <span>Insumos con niveles más bajos</span>
-                <div class="chart-container"><canvas id="inventarioChart"></canvas></div>
-            </div>
-        </div>
-        
-        <div class="billing-summary" style="margin-top: 0; margin-bottom: 40px;">
-            <span style="font-size: 1rem; color: var(--text-secondary); text-transform: uppercase; font-weight: bold;">Total Facturado Hospitalario (Periodo)</span>
-            <strong style="font-size: 2.5rem;">${{ charts.facturacion_total|floatformat:2 }}</strong>
-            <small>{{ charts.cargos_total }} cargos registrados</small>
         </div>
     </div>
 </section>
@@ -236,19 +225,6 @@
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
         });
 
-        // 8. Inventario Crítico (Bar)
-        new Chart(document.getElementById('inventarioChart'), {
-            type: 'bar',
-            data: {
-                labels: data.inventario.map(d => d.nombre.substring(0,15) + '...'),
-                datasets: [{
-                    label: 'Stock Actual',
-                    data: data.inventario.map(d => d.stock),
-                    backgroundColor: data.inventario.map(d => d.critical ? '#ef4444' : '#10b981')
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-        });
     });
 </script>
 {% endblock %}

@@ -1,0 +1,103 @@
+{% extends 'farmacia/base_farmacia.html' %}
+
+{% block title %}Dashboard Farmacia{% endblock %}
+
+{% block section_title %}Despacho de Recetas{% endblock %}
+
+{% block content %}
+<!-- KPI Cards -->
+<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px;">
+    <div class="glass-panel" style="margin-bottom: 0; text-align: center; padding: 18px;">
+        <div style="font-size: 2rem; font-weight: 700; color: #f59e0b;">{{ kpis.pendientes }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">📋 Recetas Pendientes</div>
+    </div>
+    <div class="glass-panel" style="margin-bottom: 0; text-align: center; padding: 18px;">
+        <div style="font-size: 2rem; font-weight: 700; color: var(--color-disponible);">{{ kpis.despachos_hoy }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">✅ Despachos Hoy</div>
+    </div>
+    <div class="glass-panel" style="margin-bottom: 0; text-align: center; padding: 18px;">
+        <div style="font-size: 2rem; font-weight: 700; color: {% if kpis.stock_critico > 0 %}#ef4444{% else %}var(--color-disponible){% endif %};">{{ kpis.stock_critico }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">⚠️ Stock Crítico</div>
+    </div>
+    <div class="glass-panel" style="margin-bottom: 0; text-align: center; padding: 18px;">
+        <div style="font-size: 2rem; font-weight: 700; color: {% if kpis.alertas_botiquin > 0 %}#ef4444{% else %}var(--text-main){% endif %};">{{ kpis.alertas_botiquin }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">🚨 Alertas Botiquín</div>
+    </div>
+</div>
+
+<div class="glass-panel">
+    <h2 class="panel-title">
+        💊 Recetas Pendientes de Despacho
+    </h2>
+    
+    {% if not recetas %}
+        <p style="color: var(--text-secondary); text-align: center; padding: 20px;">No hay recetas pendientes en este momento.</p>
+    {% else %}
+        <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th>ID Receta</th>
+                        <th>Paciente / Admisión</th>
+                        <th>Médico</th>
+                        <th>Fecha de Emisión</th>
+                        <th>Detalle de Medicamentos</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for receta in recetas %}
+                    <tr {% if receta.prioridad == 'EMERGENCIA' %}style="background-color: rgba(239,68,68,0.1);"{% endif %}>
+                        <td>
+                            <strong>#{{ receta.id }}</strong>
+                            {% if receta.prioridad == 'EMERGENCIA' %}
+                                <div style="color: #b91c1c; font-size: 0.7rem; font-weight: bold; margin-top: 4px; padding: 2px 4px; background: #fecaca; display: inline-block; border-radius: 4px;">🚨 STAT</div>
+                            {% elif receta.prioridad == 'URGENTE' %}
+                                <div style="color: #b45309; font-size: 0.7rem; font-weight: bold; margin-top: 4px;">Urgente</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div style="font-weight: 600;">{{ receta.admision.paciente.nombre }} {{ receta.admision.paciente.apellido }}</div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary);">Admisión: #{{ receta.admision.id }}</div>
+                        </td>
+                        <td>{{ receta.medico }}</td>
+                        <td>{{ receta.fecha_emision|date:"H:i d/m" }}</td>
+                        <td>
+                            <ul style="margin: 0; padding-left: 1rem; font-size: 0.85rem;">
+                            {% for detalle in receta.detalles.all %}
+                                <li>
+                                    <strong>{{ detalle.cantidad }}x</strong> {{ detalle.medicamento.nombre }} 
+                                    <span style="color: var(--text-secondary);">({{ detalle.medicamento.concentracion }})</span>
+                                    {% if detalle.medicamento.inventario.stock_disponible < detalle.cantidad %}
+                                        <span style="color: red; font-weight: bold; font-size: 0.7rem;">(Stock Insuficiente: {{ detalle.medicamento.inventario.stock_disponible }})</span>
+                                    {% else %}
+                                        <span style="color: green; font-size: 0.7rem;">(Disponible: {{ detalle.medicamento.inventario.stock_disponible }})</span>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                            </ul>
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 6px; flex-direction: column;">
+                                <form method="POST" action="{% url 'farmacia:despachar_receta' receta.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-primary btn-sm" style="background-color: var(--color-disponible); width: 100%;">
+                                        ✅ Despachar
+                                    </button>
+                                </form>
+                                <form method="POST" action="{% url 'farmacia:cancelar_receta' receta.id %}" onsubmit="return confirm('¿Cancelar receta #{{ receta.id }}? El stock comprometido se devolverá al inventario.');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; width: 100%; cursor: pointer;">
+                                        ❌ Cancelar
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

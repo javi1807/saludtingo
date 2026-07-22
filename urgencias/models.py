@@ -7,6 +7,7 @@ class Paciente(models.Model):
     apellido = models.CharField(max_length=100, verbose_name="Apellido")
     fecha_nacimiento = models.DateField(verbose_name="Fecha de Nacimiento")
     historia_clinica_num = models.CharField(max_length=30, unique=True, verbose_name="Número de Historia Clínica")
+    alergias_conocidas = models.TextField(blank=True, null=True, help_text="Alergias a medicamentos u otros.")
 
     def save(self, *args, **kwargs):
         if not self.historia_clinica_num:
@@ -103,10 +104,12 @@ class CuentaFacturacion(models.Model):
 
 class CargoFacturacion(models.Model):
     cuenta = models.ForeignKey(CuentaFacturacion, on_delete=models.CASCADE, related_name="cargos", verbose_name="Cuenta de Facturación")
-    insumo = models.ForeignKey(Insumo, on_delete=models.PROTECT, related_name="cargos_aplicados", verbose_name="Insumo")
+    insumo = models.ForeignKey(Insumo, on_delete=models.PROTECT, related_name="cargos_aplicados", verbose_name="Insumo", null=True, blank=True)
+    medicamento = models.ForeignKey('farmacia.Medicamento', on_delete=models.PROTECT, related_name="cargos_aplicados", verbose_name="Medicamento", null=True, blank=True)
     cantidad = models.IntegerField(verbose_name="Cantidad")
     precio_aplicado = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Aplicado")
     fecha_cargo = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Cargo")
 
     def __str__(self):
-        return f"Cargo: {self.cantidad} x {self.insumo.nombre} en Cuenta #{self.cuenta.id}"
+        item = self.insumo.nombre if self.insumo else (self.medicamento.nombre if self.medicamento else 'N/A')
+        return f"Cargo: {self.cantidad} x {item} en Cuenta #{self.cuenta.id}"

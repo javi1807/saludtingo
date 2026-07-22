@@ -1,8 +1,9 @@
 import time
 import threading
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, Client
 from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError, connection, OperationalError
+from django.contrib.auth.models import User, Group
 from urgencias.models import Paciente, Recurso, Admision, Insumo, CuentaFacturacion, CargoFacturacion
 
 class UrgenciasConcurrencyTests(TransactionTestCase):
@@ -12,6 +13,11 @@ class UrgenciasConcurrencyTests(TransactionTestCase):
         Paciente.objects.all().delete()
         Recurso.objects.all().delete()
         Insumo.objects.all().delete()
+        
+        # Create authenticated user for protected views
+        self.user = User.objects.create_user(username='testmedico', password='testpass')
+        urgencias_group, _ = Group.objects.get_or_create(name='Urgencias_Staff')
+        self.user.groups.add(urgencias_group)
         
         # Cama de prueba
         self.cama = Recurso.objects.create(codigo="CAMA-TEST", tipo="CAMA", estado="DISPONIBLE", descripcion="Cama Test Concurrencia")
@@ -263,8 +269,8 @@ class UrgenciasConcurrencyTests(TransactionTestCase):
         self.assertEqual(self.cama.estado, 'DISPONIBLE')
         
         # 1. Asignar cama
-        from django.test import Client
         client = Client()
+        client.login(username='testmedico', password='testpass')
         response = client.post('/api/recurso/asignar/', {
             'admision_id': adm.id,
             'recurso_id': self.cama.id
@@ -307,8 +313,8 @@ class UrgenciasConcurrencyTests(TransactionTestCase):
         Prueba la regularización de un paciente NN con un DNI nuevo.
         Debería actualizar los campos del registro NN original.
         """
-        from django.test import Client
         client = Client()
+        client.login(username='testmedico', password='testpass')
         
         # 1. Crear un bypass de shock trauma (crea paciente NN y bloquea cama)
         response = client.post('/api/paciente/shock-trauma/')
@@ -348,8 +354,8 @@ class UrgenciasConcurrencyTests(TransactionTestCase):
         Debería reasociar la admisión al paciente existente, actualizar sus datos demográficos
         y eliminar el paciente NN temporal.
         """
-        from django.test import Client
         client = Client()
+        client.login(username='testmedico', password='testpass')
         
         # 1. Crear paciente con DNI existente
         dni_existente = "77777777-B"
@@ -395,8 +401,8 @@ class UrgenciasConcurrencyTests(TransactionTestCase):
         """
         Prueba que las cinco páginas de la aplicación se enrutan y renderizan correctamente.
         """
-        from django.test import Client
         client = Client()
+        client.login(username='testmedico', password='testpass')
         
         pages = ['/', '/medica/', '/admision/', '/limpieza/', '/analiticas/']
         for page in pages:

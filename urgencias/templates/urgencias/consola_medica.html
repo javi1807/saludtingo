@@ -90,6 +90,7 @@
                         <td>
                             <div style="display: flex; gap: 4px;">
                                 <button class="btn btn-secondary btn-sm" onclick="openCargoModal('{{ adm.id }}', '{{ adm.paciente.nombre }} {{ adm.paciente.apellido }}')">✚ Insumo</button>
+                                <button class="btn btn-primary btn-sm" style="background-color: #8b5cf6; border-color: #8b5cf6;" onclick="openRecetaModal('{{ adm.id }}', '{{ adm.paciente.nombre }} {{ adm.paciente.apellido }}', '{{ adm.paciente.alergias_conocidas|escapejs|default:'' }}')">💊 Receta</button>
                                 
                                 {% if not adm.recurso_asignado %}
                                     <button class="btn btn-primary btn-sm" onclick="openAssignModal(null, null, '{{ adm.id }}')">Asignar Cama</button>
@@ -108,11 +109,176 @@
             </table>
         </div>
     {% endif %}
+    <!-- MODAL: GENERAR RECETA FARMACIA -->
+    <div class="modal-backdrop" id="recetaModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    💊 Emitir Receta a Farmacia
+                </h3>
+                <button class="modal-close" onclick="closeModal('recetaModal')">&times;</button>
+            </div>
+            <form id="recetaForm" onsubmit="generarRecetaSubmit(event)">
+                <input type="hidden" id="receta_admision_id" name="admision_id">
+                <input type="hidden" id="receta_medicamentos_json" name="medicamentos">
+                
+                <div class="form-group">
+                    <label>Paciente</label>
+                    <input type="text" id="receta_paciente_nombre" class="form-control" readonly>
+                </div>
+                
+                <div id="alergias_warning_container" style="display: none; background: #fee2e2; border-left: 4px solid #ef4444; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+                    <strong style="color: #b91c1c;">⚠️ ATENCIÓN - ALERGIAS CONOCIDAS:</strong>
+                    <p id="receta_paciente_alergias" style="margin: 5px 0 0 0; color: #991b1b; font-weight: bold;"></p>
+                </div>
+
+                <div class="form-group">
+                    <label>Prioridad de la Receta</label>
+                    <select name="prioridad" id="receta_prioridad" class="form-control">
+                        <option value="RUTINA">Rutina (Normal)</option>
+                        <option value="URGENTE">Urgente (Menos de 30 min)</option>
+                        <option value="EMERGENCIA" style="color: red; font-weight: bold;">STAT / Emergencia (Inmediato)</option>
+                    </select>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.02); padding: 10px; border-radius: 6px; margin-bottom: 15px;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                            <label>Medicamento</label>
+                            <select id="receta_med_select" class="form-control">
+                                <option value="">-- Seleccionar --</option>
+                                {% for med in medicamentos %}
+                                    <option value="{{ med.id }}" data-nombre="{{ med.nombre }} ({{ med.concentracion }})">{{ med.nombre }} ({{ med.concentracion }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label>Cantidad</label>
+                            <input type="number" id="receta_med_cantidad" class="form-control" value="1" min="1">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="agregarMedicamentoReceta()">➕ Agregar a Receta</button>
+                </div>
+
+                <div class="form-group">
+                    <label>Medicamentos en esta Receta:</label>
+                    <ul id="receta_lista_preview" style="background: #fff; border: 1px solid #ccc; padding: 10px 10px 10px 30px; min-height: 50px; border-radius: 4px;">
+                        <li style="color: #999; list-style: none; margin-left: -20px;">Sin medicamentos.</li>
+                    </ul>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('recetaModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" style="background-color: #8b5cf6; border-color: #8b5cf6;">Enviar a Farmacia</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    let recetaItems = [];
+
+    function openRecetaModal(admisionId, pacienteNombre, alergias) {
+        const modal = document.getElementById('recetaModal');
+        document.getElementById('receta_admision_id').value = admisionId;
+        document.getElementById('receta_paciente_nombre').value = pacienteNombre;
+        document.getElementById('receta_prioridad').value = 'RUTINA';
+        
+        const alergiasContainer = document.getElementById('alergias_warning_container');
+        const alergiasText = document.getElementById('receta_paciente_alergias');
+        if(alergias && alergias.trim() !== '') {
+            alergiasText.textContent = alergias;
+            alergiasContainer.style.display = 'block';
+        } else {
+            alergiasContainer.style.display = 'none';
+            alergiasText.textContent = '';
+        }
+
+        recetaItems = [];
+        renderRecetaLista();
+        modal.classList.add('show');
+    }
+
+    function agregarMedicamentoReceta() {
+        const select = document.getElementById('receta_med_select');
+        const cantidadInput = document.getElementById('receta_med_cantidad');
+        const id = select.value;
+        
+        if(!id) return;
+        
+        const nombre = select.options[select.selectedIndex].getAttribute('data-nombre');
+        const cantidad = parseInt(cantidadInput.value);
+        
+        if(cantidad > 0) {
+            recetaItems.push({ id: id, nombre: nombre, cantidad: cantidad });
+            renderRecetaLista();
+            select.value = "";
+            cantidadInput.value = "1";
+        }
+    }
+
+    function removeMedicamentoReceta(index) {
+        recetaItems.splice(index, 1);
+        renderRecetaLista();
+    }
+
+    function renderRecetaLista() {
+        const ul = document.getElementById('receta_lista_preview');
+        const hiddenJson = document.getElementById('receta_medicamentos_json');
+        ul.innerHTML = "";
+        
+        if(recetaItems.length === 0) {
+            ul.innerHTML = '<li style="color: #999; list-style: none; margin-left: -20px;">Sin medicamentos.</li>';
+            hiddenJson.value = "";
+            return;
+        }
+        
+        recetaItems.forEach((item, index) => {
+            const li = document.createElement('li');
+            li.innerHTML = `<strong>${item.cantidad}x</strong> ${item.nombre} <button type="button" onclick="removeMedicamentoReceta(${index})" style="background: none; border: none; color: red; cursor: pointer; font-size: 0.8rem; padding: 0 5px;">❌</button>`;
+            ul.appendChild(li);
+        });
+        
+        const toSend = recetaItems.map(i => ({id: i.id, cantidad: i.cantidad}));
+        hiddenJson.value = JSON.stringify(toSend);
+    }
+
+    function generarRecetaSubmit(event) {
+        event.preventDefault();
+        
+        if(recetaItems.length === 0) {
+            showError('Agregue al menos un medicamento a la receta.');
+            return;
+        }
+
+        const form = event.target;
+        const formData = new FormData(form);
+
+        fetch('/api/farmacia/receta/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': csrfToken
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                closeModal('recetaModal');
+                showSuccessAndReload(data.message);
+            } else {
+                showError(data.message);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            showError('Ocurrió un error al generar la receta.');
+        });
+    }
+
     function filterPacientes() {
         const query = document.getElementById('searchDni').value.toLowerCase().trim();
         const rows = document.querySelectorAll('.custom-table tbody tr');

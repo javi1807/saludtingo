@@ -87,6 +87,12 @@
 
             <!-- Status Indicator at Bottom -->
             <div class="sidebar-footer">
+                <div style="font-size: 0.8rem; margin-bottom: 10px; color: var(--text-secondary);">
+                    Usuario: <strong>{{ request.user.username }}</strong>
+                </div>
+                <a href="{% url 'logout' %}" class="btn btn-secondary btn-sm" style="display: block; text-align: center; margin-bottom: 15px; color: var(--danger); border-color: var(--danger); background: transparent;">
+                    Cerrar Sesión
+                </a>
                 <div class="live-indicator">
                     TPS CLINIC ACTIVE
                 </div>
@@ -313,6 +319,46 @@
         </div>
     </div>
 
+    <!-- MODAL: TRASLADAR PACIENTE -->
+    <div class="modal-backdrop" id="trasladarModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+                    </svg>
+                    Trasladar Paciente
+                </h3>
+                <button class="modal-close" onclick="closeModal('trasladarModal')">&times;</button>
+            </div>
+            <form id="trasladarForm" onsubmit="trasladarPacienteSubmit(event)">
+                <input type="hidden" id="trasladar_admision_id" name="admision_id">
+                
+                <div class="form-group">
+                    <label>Paciente</label>
+                    <input type="text" id="trasladar_paciente_nombre" class="form-control" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="trasladar_recurso_id">Seleccionar Nuevo Recurso (Cama/Box)</label>
+                    <select id="trasladar_recurso_id" name="recurso_id" class="form-control" required>
+                        <option value="">-- Seleccionar Recurso --</option>
+                        {% for rec in recursos %}
+                            {% if rec.estado == 'DISPONIBLE' %}
+                                <option value="{{ rec.id }}">{{ rec.codigo }} - {{ rec.get_tipo_display }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('trasladarModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" style="background-color: var(--accent-orange); border-color: var(--accent-orange);">Confirmar Traslado</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- JAVASCRIPT LOGIC -->
     <script>
         // Obtener Token CSRF de Django
@@ -356,7 +402,40 @@
             document.getElementById('cargo_paciente_nombre').value = pacienteNombre;
             document.getElementById('cargo_insumo_id').value = "";
             document.getElementById('cargo_cantidad').value = "1";
+            document.getElementById('cargo_cantidad').value = "1";
             modal.classList.add('show');
+        }
+
+        function openTrasladarModal(admisionId, pacienteNombre) {
+            const modal = document.getElementById('trasladarModal');
+            document.getElementById('trasladar_admision_id').value = admisionId;
+            document.getElementById('trasladar_paciente_nombre').value = pacienteNombre;
+            document.getElementById('trasladar_recurso_id').value = "";
+            modal.classList.add('show');
+        }
+
+        function trasladarPacienteSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+
+            fetch('/api/trasladar/', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-CSRFToken': csrfToken }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccessAndReload(data.message);
+                } else {
+                    showError(data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showError('Error al trasladar paciente.');
+            });
         }
 
         function closeModal(modalId) {
